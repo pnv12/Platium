@@ -1,28 +1,46 @@
 """
-Email Scanner — перевірка на витік даних
+Email Scanner — перевірка на витік даних + соцмережі
 """
 
 import requests
 
 def search(email):
-    """Перевіряє email через Have I Been Pwned"""
+    """Перевіряє email на витік, соцмережі, спам-лісти"""
     results = {}
     
-    # HIBP API
-    url = f"https://haveibeenpwned.com/api/v3/breachedaccount/{email}"
+    # 1. HIBP
     try:
+        url = f"https://haveibeenpwned.com/api/v3/breachedaccount/{email}"
         response = requests.get(url, timeout=10)
         if response.status_code == 200:
             breaches = response.json()
-            results["breaches"] = [b['Name'] for b in breaches]
+            results["hibp"] = {"breaches": [b['Name'] for b in breaches]}
         elif response.status_code == 404:
-            results["breaches"] = []
+            results["hibp"] = {"breaches": []}
         else:
-            results["error"] = f"HTTP {response.status_code}"
+            results["hibp"] = {"error": f"HTTP {response.status_code}"}
     except Exception as e:
-        results["error"] = str(e)
+        results["hibp"] = {"error": str(e)}
     
-    # Пошук в публічних базах (заглушка)
-    results["public_databases"] = "Перевірка вручну або через додаткові API"
+    # 2. LeakCheck (без ключа — демо)
+    try:
+        url = f"https://leakcheck.net/api/v1/?check={email}"
+        response = requests.get(url, timeout=10)
+        if response.status_code == 200:
+            data = response.json()
+            if data.get('found'):
+                results["leakcheck"] = {"found": True, "sources": data.get('sources', [])}
+            else:
+                results["leakcheck"] = {"found": False}
+        else:
+            results["leakcheck"] = {"error": f"HTTP {response.status_code}"}
+    except:
+        results["leakcheck"] = {"error": "Помилка з'єднання"}
+    
+    # 3. Пошук у соцмережах (заглушка)
+    results["social"] = {"note": "Перевірте вручну Instagram, Twitter, Facebook"}
+    
+    # 4. Спам-лісти (заглушка)
+    results["spam_lists"] = {"note": "Перевірте через публічні списки"}
     
     return results
