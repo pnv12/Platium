@@ -1,5 +1,7 @@
-requests
-phonenumbers
-Pillow
-shodan
-python-whois
+aiohttp>=3.9.0
+requests>=2.31.0
+beautifulsoup4>=4.12.0
+phonenumbers>=8.13.0
+Pillow>=10.0.0
+shodan>=1.30.0
+python-whois>=0.8.0
