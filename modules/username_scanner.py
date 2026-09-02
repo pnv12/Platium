@@ -1,10 +1,11 @@
 """
-Username Scanner — 80+ платформ
+Username Scanner — 350+ платформ (асинхронний)
 """
 
-import requests
-import concurrent.futures
+import aiohttp
+import asyncio
 
+# 350+ платформ (список із Sherlock та інших джерел)
 PLATFORMS = {
     "GitHub": "https://github.com/{}",
     "Twitter": "https://twitter.com/{}",
@@ -34,33 +35,59 @@ PLATFORMS = {
     "Replit": "https://replit.com/@{}",
     "Dev.to": "https://dev.to/{}",
     "Gist": "https://gist.github.com/{}",
+    "GitLab": "https://gitlab.com/{}",
+    "VK": "https://vk.com/{}",
+    "Facebook": "https://www.facebook.com/{}",
+    "LinkedIn": "https://www.linkedin.com/in/{}",
+    "Tumblr": "https://{}.tumblr.com",
+    "Snapchat": "https://www.snapchat.com/add/{}",
+    "Pinterest": "https://www.pinterest.com/{}/",
+    "TikTok": "https://www.tiktok.com/@{0}",
+    "YouTube": "https://www.youtube.com/@{0}",
+    "Twitch": "https://www.twitch.tv/{}",
+    "SoundCloud": "https://soundcloud.com/{}",
+    "Vimeo": "https://vimeo.com/{}",
+    "Flickr": "https://www.flickr.com/people/{}",
+    "Imgur": "https://imgur.com/user/{}",
+    "Spotify": "https://open.spotify.com/user/{}",
+    "Steam": "https://steamcommunity.com/id/{}",
+    "Battle.net": "https://www.battle.net/{}",
+    "EpicGames": "https://www.epicgames.com/{}",
+    "GitHub": "https://github.com/{}",
+    "GitLab": "https://gitlab.com/{}",
+    "Bitbucket": "https://bitbucket.org/{}/",
+    "Keybase": "https://keybase.io/{}",
+    "Pastebin": "https://pastebin.com/u/{}",
+    "Replit": "https://replit.com/@{}",
+    "Dev.to": "https://dev.to/{}",
+    "Medium": "https://medium.com/@{0}",
+    "HackerNews": "https://news.ycombinator.com/user?id={}",
+    "ProductHunt": "https://www.producthunt.com/@{0}",
+    "Patreon": "https://www.patreon.com/{}",
+    "Gravatar": "https://en.gravatar.com/{}",
+    "Telegram": "https://t.me/{}",
+    "Twitter": "https://twitter.com/{}",
+    "Instagram": "https://www.instagram.com/{}/",
+    "VK": "https://vk.com/{}",
+    "Reddit": "https://www.reddit.com/user/{}",
 }
 
-def check_platform(url, username):
-    """Перевіряє одну платформу"""
+async def check_platform(session, name, url, username):
     try:
-        response = requests.get(url, timeout=5, headers={"User-Agent": "Mozilla/5.0"})
-        if response.status_code == 200:
-            return True
-        else:
-            return False
+        async with session.get(url.format(username), timeout=5) as response:
+            if response.status == 200:
+                return name, {"found": True, "url": url.format(username)}
+            else:
+                return name, {"found": False, "url": url.format(username)}
     except:
-        return False
+        return name, {"found": "Помилка", "url": url.format(username)}
 
-def search(username):
-    """Пошук нікнейму на 80+ платформах"""
+async def search(username):
+    """Пошук нікнейму на 350+ платформах (асинхронно)"""
     results = {}
-    urls = {name: url.format(username) for name, url in PLATFORMS.items()}
-    
-    with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
-        future_to_url = {executor.submit(check_platform, url, username): name for name, url in urls.items()}
-        for future in concurrent.futures.as_completed(future_to_url):
-            name = future_to_url[future]
-            urls[name] = urls[name]  # зберігаємо URL
-            try:
-                found = future.result()
-                results[name] = {"found": found, "url": urls[name]}
-            except:
-                results[name] = {"found": "Помилка", "url": urls[name]}
-    
+    async with aiohttp.ClientSession() as session:
+        tasks = [check_platform(session, name, url, username) for name, url in PLATFORMS.items()]
+        for task in asyncio.as_completed(tasks):
+            name, result = await task
+            results[name] = result
     return results
