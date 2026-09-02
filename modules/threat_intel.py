@@ -2,48 +2,53 @@
 Threat Intelligence — VirusTotal, AbuseIPDB, Shodan
 """
 
-import requests
+import aiohttp
+import asyncio
+from config import VIRUSTOTAL_API_KEY, ABUSEIPDB_API_KEY, SHODAN_API_KEY
 
-def check(query):
-    """Перевіряє загрози через VirusTotal, AbuseIPDB, Shodan"""
+async def fetch(session, url, headers=None):
+    try:
+        async with session.get(url, headers=headers or {}, timeout=10) as response:
+            if response.status == 200:
+                return await response.json()
+            else:
+                return None
+    except:
+        return None
+
+async def check(query):
     results = {}
-    
-    # 1. VirusTotal (якщо є ключ)
-    try:
-        from config import VIRUSTOTAL_API_KEY
-        url = f"https://www.virustotal.com/api/v3/ip_addresses/{query}"
-        headers = {"x-apikey": VIRUSTOTAL_API_KEY}
-        response = requests.get(url, headers=headers, timeout=10)
-        if response.status_code == 200:
-            data = response.json()
-            results["virustotal"] = data
+    async with aiohttp.ClientSession() as session:
+        # 1. VirusTotal
+        if VIRUSTOTAL_API_KEY:
+            url = f"https://www.virustotal.com/api/v3/ip_addresses/{query}"
+            headers = {"x-apikey": VIRUSTOTAL_API_KEY}
+            data = await fetch(session, url, headers)
+            if data:
+                results["virustotal"] = data
         else:
-            results["virustotal"] = {"error": f"HTTP {response.status_code}"}
-    except:
-        results["virustotal"] = {"error": "Ключ не знайдено"}
-    
-    # 2. AbuseIPDB
-    try:
-        from config import ABUSEIPDB_API_KEY
-        url = f"https://api.abuseipdb.com/api/v2/check?ipAddress={query}"
-        headers = {"Key": ABUSEIPDB_API_KEY, "Accept": "application/json"}
-        response = requests.get(url, headers=headers, timeout=10)
-        if response.status_code == 200:
-            data = response.json()
-            results["abuseipdb"] = data
+            results["virustotal"] = {"error": "Ключ не знайдено"}
+        
+        # 2. AbuseIPDB
+        if ABUSEIPDB_API_KEY:
+            url = f"https://api.abuseipdb.com/api/v2/check?ipAddress={query}"
+            headers = {"Key": ABUSEIPDB_API_KEY, "Accept": "application/json"}
+            data = await fetch(session, url, headers)
+            if data:
+                results["abuseipdb"] = data
         else:
-            results["abuseipdb"] = {"error": f"HTTP {response.status_code}"}
-    except:
-        results["abuseipdb"] = {"error": "Ключ не знайдено"}
-    
-    # 3. Відкриті порти (Shodan, якщо є ключ)
-    try:
-        from config import SHODAN_API_KEY
-        import shodan
-        api = shodan.Shodan(SHODAN_API_KEY)
-        host = api.host(query)
-        results["shodan"] = {"ports": host.get('ports', [])}
-    except:
-        results["shodan"] = {"error": "Shodan недоступний"}
+            results["abuseipdb"] = {"error": "Ключ не знайдено"}
+        
+        # 3. Shodan
+        if SHODAN_API_KEY:
+            try:
+                import shodan
+                api = shodan.Shodan(SHODAN_API_KEY)
+                host = api.host(query)
+                results["shodan"] = {"ports": host.get('ports', [])}
+            except:
+                results["shodan"] = {"error": "Помилка Shodan"}
+        else:
+            results["shodan"] = {"error": "Ключ не знайдено"}
     
     return results
