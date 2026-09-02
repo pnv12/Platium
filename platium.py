@@ -1,25 +1,61 @@
 #!/usr/bin/env python3
 """
-Platium — Advanced OSINT Framework (v4.0)
+Platium — Advanced OSINT Framework (v5.0)
 Author: Neo | Github: pnv21
 """
 
 import sys
 import json
+import time
 import argparse
-from modules import username_scanner, email_scanner, phone_scanner, ip_scanner
-from modules import exif_extractor, social_analyzer, darknet_scanner, graph_builder
-from modules import threat_intel, report_generator
-from modules.utils import (
-    print_banner, animate_loading, progress_bar, print_header, 
-    print_results, cyber_menu, print_status
+import asyncio
+from datetime import datetime
+from modules import (
+    username_scanner, email_scanner, phone_scanner, ip_scanner,
+    exif_extractor, social_analyzer, darknet_scanner, graph_builder,
+    threat_intel, report_generator, ui, utils
 )
 
+async def run_tasks(args):
+    """Запускає всі модулі асинхронно"""
+    results = {}
+    tasks = []
+
+    if args.username:
+        tasks.append(username_scanner.search(args.username))
+    if args.email:
+        tasks.append(email_scanner.search(args.email))
+    if args.phone:
+        tasks.append(phone_scanner.search(args.phone))
+    if args.ip:
+        tasks.append(ip_scanner.search(args.ip))
+    if args.file:
+        tasks.append(exif_extractor.extract(args.file))
+    if args.social:
+        tasks.append(social_analyzer.search(args.social))
+    if args.darkweb:
+        tasks.append(darknet_scanner.search(args.darkweb))
+    if args.graph:
+        tasks.append(graph_builder.build(args.graph))
+    if args.threat:
+        tasks.append(threat_intel.check(args.threat))
+
+    if not tasks:
+        return {}
+
+    # Виконання всіх задач паралельно
+    results_list = await asyncio.gather(*tasks)
+    keys = [k for k, v in vars(args).items() if v and k not in ['output', 'demo', 'menu', 'func']]
+    for key, res in zip(keys, results_list):
+        results[key] = res
+
+    return results
+
 def main():
-    print_banner()
+    ui.display_banner()
     
-    parser = argparse.ArgumentParser(description="Platium — Professional OSINT Framework")
-    parser.add_argument("-u", "--username", help="Пошук за нікнеймом (60+ платформ)")
+    parser = argparse.ArgumentParser(description="Platium — Professional OSINT Framework v5.0")
+    parser.add_argument("-u", "--username", help="Пошук за нікнеймом (350+ платформ)")
     parser.add_argument("-e", "--email", help="Пошук за email (HIBP + утечки)")
     parser.add_argument("-p", "--phone", help="Аналіз номеру телефону")
     parser.add_argument("-i", "--ip", help="Аналіз IP (Shodan + геолокація)")
@@ -31,91 +67,50 @@ def main():
     parser.add_argument("-o", "--output", help="Шлях для збереження звіту", default="data/reports/report.txt")
     parser.add_argument("--demo", action="store_true", help="Запустити демонстрацію")
     parser.add_argument("--menu", action="store_true", help="Запустити інтерактивне меню")
+    parser.add_argument("--web", action="store_true", help="Запустити веб-сервер для перегляду звітів")
     
     args = parser.parse_args()
     
     if args.demo:
-        run_demo()
+        ui.run_demo()
         sys.exit(0)
     
     if args.menu:
-        modules_map = {
-            "1": "username", "2": "email", "3": "phone", "4": "ip",
-            "5": "file", "6": "social", "7": "darkweb", "8": "graph", "9": "threat"
-        }
-        choice = cyber_menu(modules_map)
-        if choice and choice in modules_map:
-            print_status(f"Запуск модуля {modules_map[choice]}...", "info")
+        ui.cyber_menu()
+        sys.exit(0)
+    
+    if args.web:
+        utils.start_web_server()
         sys.exit(0)
     
     if len(sys.argv) < 2:
         parser.print_help()
         sys.exit(1)
     
-    results = {}
-    total_tasks = 0
-    completed = 0
+    ui.print_header("🚀 ЗАПУСК АНАЛІЗУ")
     
-    # Словник для маппінгу аргументів на модулі
-    modules = {
-        "username": (args.username, username_scanner.search, "Username Scan"),
-        "email": (args.email, email_scanner.search, "Email Check"),
-        "phone": (args.phone, phone_scanner.search, "Phone Analysis"),
-        "ip": (args.ip, ip_scanner.search, "IP Geolocation"),
-        "file": (args.file, exif_extractor.extract, "EXIF Extraction"),
-        "social": (args.social, social_analyzer.search, "Social Analysis"),
-        "darkweb": (args.darkweb, darknet_scanner.search, "Darknet Scan"),
-        "graph": (args.graph, graph_builder.build, "Graph Building"),
-        "threat": (args.threat, threat_intel.check, "Threat Intelligence")
-    }
+    # Асинхронний запуск
+    loop = asyncio.get_event_loop()
+    results = loop.run_until_complete(run_tasks(args))
     
-    for name, (arg_value, func, label) in modules.items():
-        if arg_value:
-            total_tasks += 1
-            print_status(f"Запуск {label}: {arg_value}", "info")
-            animate_loading()
-            results[name] = func(arg_value)
-            completed += 1
-            progress_bar(completed, total_tasks, label)
+    if not results:
+        ui.print_status("Немає даних для аналізу", "error")
+        sys.exit(1)
     
     # Вивід результатів
-    print_results(results)
+    print("\n" + "="*60)
+    print("📊 РЕЗУЛЬТАТИ:")
+    print(json.dumps(results, indent=2, ensure_ascii=False))
     
     # Генерація звіту
     report_generator.generate(results, args.output)
-    print_status(f"Звіт збережено у: {args.output}", "success")
+    ui.print_status(f"Звіт збережено у: {args.output}", "success")
     
-    # Якщо є email — будуємо граф зв'язків автоматично
+    # Якщо є email, будуємо граф зв'язків
     if args.email:
-        print_status("Автоматичний аналіз зв'язків...", "info")
-        graph_builder.build(args.email)
-
-def run_demo():
-    """Демонстрація можливостей Platium"""
-    print_header("🚀 ДЕМОНСТРАЦІЯ МОЖЛИВОСТЕЙ PLATIUM")
-    
-    test_cases = [
-        ("USERNAME", "pnv21"),
-        ("EMAIL", "test@example.com"),
-        ("PHONE", "+380991234567"),
-        ("IP", "8.8.8.8"),
-    ]
-    
-    for i, (test_name, test_value) in enumerate(test_cases, 1):
-        print_status(f"[{i}/{len(test_cases)}] Аналіз: {test_name} = {test_value}", "info")
-        animate_loading()
-        time.sleep(1)
-        print_status("Успішно", "success")
-    
-    demo_results = {
-        "username": {"GitHub": "https://github.com/pnv21", "found_on": 8},
-        "email": {"breaches": ["Adobe", "LinkedIn"], "public_sources": 15}
-    }
-    print("\n📋 ПРИКЛАД РЕЗУЛЬТАТІВ:")
-    print(json.dumps(demo_results, indent=2, ensure_ascii=False))
-    
-    print("\n" + "="*60)
-    print_status("Демонстрація завершена.", "success")
+        ui.print_status("🔗 Автоматичний аналіз зв'язків...", "info")
+        graph_result = loop.run_until_complete(graph_builder.build(args.email))
+        print(json.dumps(graph_result, indent=2, ensure_ascii=False))
 
 if __name__ == "__main__":
     main()
