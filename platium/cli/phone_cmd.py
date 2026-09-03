@@ -32,7 +32,7 @@ def run(args):
             print(f"[+] Report saved to {args.output}")
             
     except ValidationError as e:
-        print(f"[!] Invalid phone number: {e}")
+        print(f"[!] Invalid phone: {e}")
         sys.exit(1)
     except ScannerError as e:
         print(f"[!] Scanner error: {e}")
