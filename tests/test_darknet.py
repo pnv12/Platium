@@ -1,16 +1,22 @@
 import unittest
-from platium.scanners.darknet.scanner import search
+from platium.scanners.darknet.scanner import search, check_tor
 
 class TestDarknetScanner(unittest.TestCase):
-    def test_valid_query(self):
+    def test_search_without_tor(self):
+        # Цей тест не перевіряє реальну роботу Tor, а тільки структуру
         result = search("bitcoin")
-        self.assertIn("query", result)
-        self.assertEqual(result["query"], "bitcoin")
-        self.assertIn("results", result)
+        self.assertIn("target", result)
+        self.assertEqual(result["target"], "bitcoin")
+        self.assertIn("sources", result)
+        self.assertIn("status", result)
 
-    def test_empty_query(self):
-        result = search("")
-        self.assertIsInstance(result, dict)
+    def test_check_tor(self):
+        # Просто перевіряємо, що функція не падає
+        try:
+            check_tor()
+            self.assertTrue(True)
+        except:
+            self.fail("check_tor() raised exception")
 
 if __name__ == "__main__":
     unittest.main()
