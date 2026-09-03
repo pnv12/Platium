@@ -31,7 +31,7 @@ def main():
 
     subparsers = parser.add_subparsers(dest="command", required=True, help="Available commands")
 
-    # --- РЕЄСТРАЦІЯ ВСІХ КОМАНД ---
+    # --- ОСНОВНІ КОМАНДИ ---
     username_cmd.register(subparsers)
     email_cmd.register(subparsers)
     phone_cmd.register(subparsers)
@@ -43,7 +43,7 @@ def main():
     darknet_cmd.register(subparsers)
     deep_cmd.register(subparsers)
 
-    # Додаткові команди для агрегатора
+    # --- ДОДАТКОВІ КОМАНДИ ДЛЯ АГРЕГАТОРА ---
     aggregate_cmd.register(subparsers)
     aggregate_cmd.register_analyze(subparsers)
     aggregate_cmd.register_connections(subparsers)
