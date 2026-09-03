@@ -1,5 +1,5 @@
 """
-Deep OSINT Scanner — комбінований пошук за будь-яким типом запиту
+Deep OSINT Scanner — комбінований пошук з автовизначенням типу запиту
 """
 
 import re
@@ -12,6 +12,8 @@ from platium.scanners.ip.scanner import search as ip_search
 
 def detect_type(query):
     """Автоматично визначає тип запиту"""
+    if not query or len(query) < 2:
+        return 'unknown'
     if '@' in query:
         return 'email'
     if re.match(r'^\+?\d{10,15}$', query.replace(' ', '')):
@@ -24,49 +26,54 @@ def detect_type(query):
 
 def deep_search(query, config=None, verbose=False):
     """
-    Глибокий OSINT-пошук: визначає тип запиту і запускає всі відповідні сканери
+    Глибокий OSINT-пошук: визначає тип і запускає релевантні сканери.
     """
     if config is None:
         config = load_config()
-    
+
     result = {
         "target": query,
         "scan_type": "deep",
         "detected_type": detect_type(query),
         "results": {},
-        "status": "partial"
+        "status": "empty"
     }
-    
-    # Запускаємо всі можливі сканери
-    scanners = {
-        "username": username_search,
-        "email": email_search,
-        "phone": phone_search,
-        "ip": ip_search
+
+    # Маппінг типів -> сканери
+    scanner_map = {
+        "username": ("username", username_search),
+        "email": ("email", email_search),
+        "phone": ("phone", phone_search),
+        "ip": ("ip", ip_search),
+        "unknown": None
     }
-    
-    for name, scanner in scanners.items():
-        try:
-            if name == "username" and not re.match(r'^[a-zA-Z0-9_.-]+$', query):
-                continue
-            if name == "email" and '@' not in query:
-                continue
-            if name == "phone" and not re.match(r'^\+?\d{10,15}$', query.replace(' ', '')):
-                continue
-            if name == "ip" and not re.match(r'^(\d{1,3}\.){3}\d{1,3}$', query):
-                continue
-                
-            scan_result = scanner(query, config, verbose)
-            result["results"][name] = scan_result
-        except Exception as e:
-            result["results"][name] = {"error": str(e)}
-    
-    # Якщо хоч щось знайдено — статус success
-    if any(r.get('status') == 'found' or r.get('status') == 'valid' for r in result["results"].values() if isinstance(r, dict)):
-        result["status"] = "success"
-    elif result["results"]:
-        result["status"] = "partial"
-    else:
-        result["status"] = "empty"
-    
+
+    detected = result["detected_type"]
+    if detected == "unknown":
+        result["status"] = "error"
+        result["error"] = "Unknown query type"
+        return result
+
+    # Запускаємо ТІЛЬКИ релевантний сканер
+    scanner_info = scanner_map.get(detected)
+    if scanner_info is None:
+        result["status"] = "error"
+        result["error"] = "Unsupported type"
+        return result
+
+    name, scanner = scanner_info
+    try:
+        scan_result = scanner(query, config, verbose)
+        result["results"][name] = scan_result
+        # Якщо сканер повернув status "success" або "found" — вважаємо це успіхом
+        if scan_result.get("status") in ("success", "found", "valid"):
+            result["status"] = "success"
+        elif scan_result.get("status") in ("partial", "error"):
+            result["status"] = "partial"
+        else:
+            result["status"] = "empty"
+    except Exception as e:
+        result["results"][name] = {"error": str(e)}
+        result["status"] = "error"
+
     return result
