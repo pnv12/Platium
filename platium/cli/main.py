@@ -11,7 +11,8 @@ from platium.cli import (
     social_cmd,
     threat_cmd,
     graph_cmd,
-    darknet_cmd   # додано
+    darknet_cmd,
+    deep_cmd
 )
 
 def main():
@@ -25,6 +26,7 @@ def main():
 
     subparsers = parser.add_subparsers(dest="command", required=True, help="Available commands")
 
+    # Реєстрація всіх команд
     username_cmd.register(subparsers)
     email_cmd.register(subparsers)
     phone_cmd.register(subparsers)
@@ -33,7 +35,8 @@ def main():
     social_cmd.register(subparsers)
     threat_cmd.register(subparsers)
     graph_cmd.register(subparsers)
-    darknet_cmd.register(subparsers)   # додано
+    darknet_cmd.register(subparsers)
+    deep_cmd.register(subparsers)
 
     args = parser.parse_args()
 
