@@ -1,9 +1,15 @@
-aiohttp>=3.9.0
-requests>=2.31.0
-beautifulsoup4>=4.12.0
-phonenumbers>=8.13.0
-Pillow>=10.0.0
-shodan>=1.30.0
-python-whois>=0.8.0
-beautifulsoup4
-requests[socks]
+# Основні бібліотеки для Platium
+requests>=2.31.0          # HTTP-запити
+phonenumbers>=8.13.29      # Аналіз номерів телефонів
+Pillow>=10.2.0             # Робота з EXIF та зображеннями
+beautifulsoup4>=4.12.0     # Парсинг HTML (для darknet та інших)
+python-whois>=0.8.0        # WHOIS-запити
+python-dotenv>=1.0.0       # Завантаження змінних середовища з .env
+pysocks>=1.7.1             # Підтримка SOCKS5 для Tor
+
+# Опціональні бібліотеки (якщо використовуються)
+# shodan>=1.30.0           # Інтеграція з Shodan (якщо є ключ)
+# aiohttp                  # Не використовується в новій архітектурі
+
+# Для тестування (можна винести в requirements-dev.txt)
+pytest>=7.4.0
