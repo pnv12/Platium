@@ -1,16 +1,27 @@
 """
-Data Aggregator — збереження, пошук зв'язків та аналітика
+Data Aggregator — локальна SQLite-база для збереження результатів пошуку,
+зв'язків та аналітики.
 """
 
+import os
 import sqlite3
 import json
 from datetime import datetime
 from platium.core.config import load_config
 
-DB_PATH = "data/platium.db"
+# Визначаємо шлях до бази даних відносно кореня проєкту
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+DATA_DIR = os.path.join(BASE_DIR, "data")
+DB_PATH = os.path.join(DATA_DIR, "platium.db")
+
+def _ensure_data_dir():
+    """Створює папку data/, якщо її немає"""
+    if not os.path.exists(DATA_DIR):
+        os.makedirs(DATA_DIR)
 
 def init_db():
-    """Ініціалізує базу даних (якщо не існує)"""
+    """Ініціалізує базу даних (створює таблиці, якщо їх немає)"""
+    _ensure_data_dir()
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute('''
@@ -55,7 +66,7 @@ def save_search(query, query_type, data):
     conn.close()
 
 def find_connections(query):
-    """Знаходить зв'язки між цілями"""
+    """Знаходить зв'язки для заданого запиту (source -> target)"""
     init_db()
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
@@ -98,4 +109,4 @@ def generate_analysis_report():
         "connections": connections_count,
         "type_distribution": dict(type_stats),
         "generated": datetime.now().isoformat()
-              }
+    }
