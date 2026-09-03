@@ -1,20 +1,31 @@
 import argparse
 import sys
 import json
-from platium.core.errors import ScannerError
+from platium.core.errors import ValidationError
 from platium.intelligence.aggregator import save_search, find_connections, generate_analysis_report
 
 def register(subparsers):
     parser = subparsers.add_parser("aggregate", help="Save search results to database")
     parser.add_argument("query", help="Query to save")
-    parser.add_argument("--type", default="auto", help="Type of query (email, phone, ip, username)")
-    parser.add_argument("--data", help="JSON data to save (optional)")
+    parser.add_argument("--type", default="auto", help="Type of query (email, phone, ip, username, etc.)")
+    parser.add_argument("--data", help="JSON data to save (must be valid JSON)")
     parser.set_defaults(func=run)
 
 def run(args):
     try:
-        # Якщо дані не надані — шукаємо (але тут просто заглушка)
-        data = {"status": "saved", "message": "Data saved manually"}
+        # Перевіряємо, чи передано дані
+        if not args.data:
+            print("[!] Error: --data is required")
+            sys.exit(1)
+        
+        # Валідуємо JSON
+        try:
+            data = json.loads(args.data)
+        except json.JSONDecodeError as e:
+            print(f"[!] Invalid JSON: {e}")
+            sys.exit(1)
+
+        # Зберігаємо
         save_search(args.query, args.type, data)
         print(f"[+] Data for '{args.query}' saved to database")
     except Exception as e:
