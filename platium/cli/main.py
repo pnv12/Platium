@@ -2,7 +2,7 @@
 import argparse
 import sys
 from platium.ui.display import display_banner
-from platium.cli import username_cmd, email_cmd, phone_cmd, ip_cmd, exif_cmd, social_cmd, threat_cmd, graph_cmd
+from platium.cli import username_cmd, email_cmd, phone_cmd, ip_cmd, exif_cmd
 
 def main():
     display_banner()
@@ -15,14 +15,16 @@ def main():
     
     subparsers = parser.add_subparsers(dest="command", required=True, help="Available commands")
     
+    # Реєстрація всіх команд
     username_cmd.register(subparsers)
     email_cmd.register(subparsers)
     phone_cmd.register(subparsers)
     ip_cmd.register(subparsers)
     exif_cmd.register(subparsers)
-    social_cmd.register(subparsers)
-    threat_cmd.register(subparsers)
-    graph_cmd.register(subparsers)
+    # social_cmd.register(subparsers)
+    # threat_cmd.register(subparsers)
+    # graph_cmd.register(subparsers)
+    # report_cmd.register(subparsers)
     
     args = parser.parse_args()
     
