@@ -1,60 +1,36 @@
 #!/usr/bin/env python3
-"""
-Platium — Advanced OSINT Framework
-CLI entry point
-"""
-
 import argparse
 import sys
-import json
 from platium.ui.display import display_banner
-from platium.cli import username, email, phone, ip, exif, report
-from platium.core import __version__
+from platium.cli import username_cmd
 
 def main():
     display_banner()
-    
     parser = argparse.ArgumentParser(
         prog="platium",
-        description="Advanced OSINT Framework for Linux/Termux"
+        description="Advanced OSINT Framework",
+        epilog="Use 'platium <command> --help' for more info"
     )
-    parser.add_argument("--version", action="version", version=f"Platium {__version__}")
-    parser.add_argument("--json", action="store_true", help="Output results in JSON format")
-    parser.add_argument("--output", "-o", help="Save results to file")
-    parser.add_argument("--verbose", "-v", action="store_true", help="Verbose output")
-    parser.add_argument("--quiet", "-q", action="store_true", help="Quiet mode (no banners)")
-
-    subparsers = parser.add_subparsers(dest="command", required=True, help="Subcommands")
-
+    parser.add_argument("--version", action="version", version="Platium 0.1.0")
+    
+    subparsers = parser.add_subparsers(dest="command", required=True, help="Available commands")
+    
     # Реєстрація команд
-    username.register(subparsers)
-    email.register(subparsers)
-    phone.register(subparsers)
-    ip.register(subparsers)
-    exif.register(subparsers)
-    report.register(subparsers)
-
+    username_cmd.register(subparsers)
+    # email_cmd.register(subparsers)   # додамо пізніше
+    # phone_cmd.register(subparsers)
+    # ip_cmd.register(subparsers)
+    # exif_cmd.register(subparsers)
+    # report_cmd.register(subparsers)
+    
     args = parser.parse_args()
-
-    # Якщо команда не вказана, вивести help
-    if not args.command:
+    
+    # Універсальний виклик — args.func(args)
+    if hasattr(args, 'func'):
+        args.func(args)
+    else:
         parser.print_help()
         sys.exit(1)
-
-    # Запуск відповідної команди
-    try:
-        result = args.func(args)  # Кожна команда повертає результат
-        output_result(result, args)
-    except Exception as e:
-        print(f"[!] Error: {e}", file=sys.stderr)
-        sys.exit(1)
-
-def output_result(result, args):
-    """Уніфікований вивід результатів"""
-    if args.json:
-        print(json.dumps(result, indent=2, ensure_ascii=False))
-    else:
-        print_result(result)  # Тут буде виклик функції для красивого виводу
 
 if __name__ == "__main__":
     main()
