@@ -1,13 +1,39 @@
+"""
+Darknet Scanner — пошук .onion сайтів через Ahmia (з підтримкою Tor)
+"""
+
 import requests
-from bs4 import BeautifulSoup
 from platium.core.config import load_config
 from platium.core.errors import ScannerError
 from platium.utils.network import safe_request
 
+def check_tor():
+    """
+    Перевіряє, чи доступний Tor-проксі (127.0.0.1:9050).
+    Повертає True, якщо Tor працює і SOCKS5-проксі доступний.
+    """
+    try:
+        # Перевіряємо через запит до Tor-проксі
+        proxies = {
+            'http': 'socks5h://127.0.0.1:9050',
+            'https': 'socks5h://127.0.0.1:9050'
+        }
+        # Робимо запит до check.torproject.org через Tor
+        response = requests.get(
+            'https://check.torproject.org/',
+            proxies=proxies,
+            timeout=5
+        )
+        # Якщо статус 200 і є ознаки Tor — повертаємо True
+        if response.status_code == 200 and 'Congratulations' in response.text:
+            return True
+    except:
+        pass
+    return False
+
 def search(query, config=None, verbose=False):
     """
-    Пошук у даркнеті через Ahmia (з підтримкою Tor, якщо він запущений).
-    Повертає структурований результат.
+    Пошук у даркнеті через Ahmia (з Tor або без).
     """
     if config is None:
         config = load_config()
@@ -15,52 +41,62 @@ def search(query, config=None, verbose=False):
     result = {
         "target": query,
         "scan_type": "darknet",
-        "status": "unknown",
-        "sources": {}
+        "sources": {},
+        "status": "empty"
     }
 
-    # Налаштування проксі для Tor (якщо запущений)
-    proxies = {
-        'http': 'socks5h://127.0.0.1:9050',
-        'https': 'socks5h://127.0.0.1:9050'
-    } if check_tor() else {}
+    # Перевіряємо, чи доступний Tor
+    tor_available = check_tor()
+    if verbose:
+        print(f"[*] Tor available: {tor_available}")
 
+    # Вибираємо проксі (якщо Tor доступний)
+    proxies = None
+    if tor_available:
+        proxies = {
+            'http': 'socks5h://127.0.0.1:9050',
+            'https': 'socks5h://127.0.0.1:9050'
+        }
+
+    # Запит до Ahmia
     try:
         url = f"https://ahmia.fi/search/?q={query}"
-        resp = safe_request(
-            url,
-            proxies=proxies,
-            timeout=config.get("timeout", 15)
-        )
-
-        if resp and resp.status_code == 200:
-            soup = BeautifulSoup(resp.text, 'html.parser')
-            links = soup.find_all('a', href=True)
-            onion_links = [a['href'] for a in links if '.onion' in a['href']]
-
+        response = requests.get(url, proxies=proxies, timeout=config.get("timeout", 15))
+        if response.status_code == 200:
+            # Простий парсинг результатів (без BeautifulSoup)
+            results_list = []
+            for line in response.text.split('\n'):
+                if '.onion' in line:
+                    # Шукаємо посилання .onion
+                    start = line.find('href="')
+                    if start != -1:
+                        start += 6
+                        end = line.find('"', start)
+                        if end != -1:
+                            link = line[start:end]
+                            if '.onion' in link:
+                                results_list.append(link)
+            # Унікальні результати (без дублікатів)
+            unique_results = list(dict.fromkeys(results_list))
             result["sources"]["ahmia"] = {
-                "status": "found" if onion_links else "clean",
-                "results": onion_links[:10],
-                "count": len(onion_links)
+                "status": "success",
+                "url": url,
+                "results": unique_results[:10],  # максимум 10 посилань
+                "tor_used": tor_available
             }
-            result["status"] = "found" if onion_links else "clean"
+            result["status"] = "success" if unique_results else "empty"
         else:
             result["sources"]["ahmia"] = {
                 "status": "error",
-                "error": f"HTTP {resp.status_code if resp else 'unknown'}"
+                "code": response.status_code,
+                "message": "HTTP error"
             }
             result["status"] = "error"
-
     except Exception as e:
-        result["sources"]["ahmia"] = {"status": "error", "error": str(e)}
+        result["sources"]["ahmia"] = {
+            "status": "error",
+            "message": str(e)
+        }
         result["status"] = "error"
 
     return result
-
-def check_tor():
-    """Перевіряє, чи запущено Tor на локальному порту 9050."""
-    try:
-        requests.get('http://127.0.0.1:9050', timeout=1)
-        return True
-    except:
-        return False
