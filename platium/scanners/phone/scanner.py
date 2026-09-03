@@ -1,64 +1,40 @@
 import phonenumbers
 from phonenumbers import carrier, geocoder, timezone
 from platium.core.config import load_config
-from platium.core.errors import ScannerError
+from platium.core.errors import ValidationError, ScannerError
 
 def search(phone, config=None, verbose=False):
+    """
+    Аналізує номер телефону: країна, оператор, часовий пояс.
+    Повертає структурований результат.
+    """
     if config is None:
         config = load_config()
     
-    results = {
+    result = {
         "target": phone,
         "scan_type": "phone",
-        "sources": {}
+        "status": "unknown",
+        "data": {}
     }
     
     try:
         number = phonenumbers.parse(phone, None)
         if not phonenumbers.is_valid_number(number):
-            results["status"] = "invalid"
-            results["error"] = "Invalid phone number"
-            return results
+            result["status"] = "invalid"
+            result["error"] = "Invalid phone number"
+            return result
         
-        results["sources"]["phonenumbers"] = {
-            "status": "success",
-            "country": geocoder.description_for_number(number, "en"),
-            "operator": carrier.name_for_number(number, "en"),
-            "timezone": timezone.time_zones_for_number(number)
-        }
-        results["status"] = "valid"
+        result["data"]["country"] = geocoder.description_for_number(number, "en")
+        result["data"]["operator"] = carrier.name_for_number(number, "en")
+        result["data"]["timezone"] = timezone.time_zones_for_number(number)
+        result["status"] = "valid"
         
-        # Додаткова перевірка через numverify (якщо є ключ)
-        try:
-            from platium.core.config import load_config
-            config = load_config()
-            if config.get("numverify_key"):
-                import requests
-                resp = requests.get(
-                    f"http://apilayer.net/api/validate?access_key={config['numverify_key']}&number={phone}",
-                    timeout=config.get("timeout", 10)
-                )
-                if resp.status_code == 200:
-                    data = resp.json()
-                    results["sources"]["numverify"] = {
-                        "status": "success",
-                        "country": data.get('country_name', 'N/A'),
-                        "location": data.get('location', 'N/A'),
-                        "carrier": data.get('carrier', 'N/A'),
-                        "line_type": data.get('line_type', 'N/A')
-                    }
-        except:
-            pass
-        
-        # Заглушка для месенджерів
-        results["sources"]["messengers"] = {
-            "status": "info",
-            "whatsapp": "Check manually",
-            "telegram": "Check manually"
-        }
-        
+    except phonenumbers.NumberParseException as e:
+        result["status"] = "error"
+        result["error"] = str(e)
     except Exception as e:
-        results["status"] = "error"
-        results["error"] = str(e)
+        result["status"] = "error"
+        result["error"] = str(e)
     
-    return results
+    return result
