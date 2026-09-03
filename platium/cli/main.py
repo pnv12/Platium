@@ -10,7 +10,8 @@ from platium.cli import (
     exif_cmd,
     social_cmd,
     threat_cmd,
-    graph_cmd
+    graph_cmd,
+    darknet_cmd   # додано
 )
 
 def main():
@@ -24,7 +25,6 @@ def main():
 
     subparsers = parser.add_subparsers(dest="command", required=True, help="Available commands")
 
-    # Реєстрація всіх команд
     username_cmd.register(subparsers)
     email_cmd.register(subparsers)
     phone_cmd.register(subparsers)
@@ -33,6 +33,7 @@ def main():
     social_cmd.register(subparsers)
     threat_cmd.register(subparsers)
     graph_cmd.register(subparsers)
+    darknet_cmd.register(subparsers)   # додано
 
     args = parser.parse_args()
 
