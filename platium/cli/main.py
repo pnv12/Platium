@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+"""
+Platium — головний CLI-вхід
+"""
+
 import argparse
 import sys
 from platium.ui.display import display_banner
@@ -12,7 +16,8 @@ from platium.cli import (
     threat_cmd,
     graph_cmd,
     darknet_cmd,
-    deep_cmd
+    deep_cmd,
+    aggregate_cmd
 )
 
 def main():
@@ -26,7 +31,7 @@ def main():
 
     subparsers = parser.add_subparsers(dest="command", required=True, help="Available commands")
 
-    # Реєстрація всіх команд
+    # --- РЕЄСТРАЦІЯ ВСІХ КОМАНД ---
     username_cmd.register(subparsers)
     email_cmd.register(subparsers)
     phone_cmd.register(subparsers)
@@ -37,6 +42,11 @@ def main():
     graph_cmd.register(subparsers)
     darknet_cmd.register(subparsers)
     deep_cmd.register(subparsers)
+
+    # Додаткові команди для агрегатора
+    aggregate_cmd.register(subparsers)
+    aggregate_cmd.register_analyze(subparsers)
+    aggregate_cmd.register_connections(subparsers)
 
     args = parser.parse_args()
 
