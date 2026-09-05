@@ -13,7 +13,8 @@ from platium.cli import (
     graph_cmd,
     darknet_cmd,
     deep_cmd,
-    aggregate_cmd
+    aggregate_cmd,
+    investigation_cmd
 )
 
 def main():
@@ -43,7 +44,10 @@ def main():
     aggregate_cmd.register(subparsers)
     aggregate_cmd.register_analyze(subparsers)
     aggregate_cmd.register_connections(subparsers)
-    aggregate_cmd.register_correlate(subparsers)  # НОВА КОМАНДА
+    aggregate_cmd.register_correlate(subparsers)
+
+    # --- КОМАНДИ РОЗСЛІДУВАНЬ ---
+    investigation_cmd.register(subparsers)
 
     args = parser.parse_args()
 
