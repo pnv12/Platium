@@ -14,7 +14,7 @@ from platium.cli import (
     darknet_cmd,
     deep_cmd,
     aggregate_cmd,
-    investigation_cmd
+    report_cmd  # додано
 )
 
 def main():
@@ -46,8 +46,8 @@ def main():
     aggregate_cmd.register_connections(subparsers)
     aggregate_cmd.register_correlate(subparsers)
 
-    # --- КОМАНДИ РОЗСЛІДУВАНЬ ---
-    investigation_cmd.register(subparsers)
+    # --- ЗВІТИ ---
+    report_cmd.register(subparsers)  # додано
 
     args = parser.parse_args()
 
