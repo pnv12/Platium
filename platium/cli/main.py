@@ -1,8 +1,4 @@
 #!/usr/bin/env python3
-"""
-Platium — головний CLI-вхід
-"""
-
 import argparse
 import sys
 from platium.ui.display import display_banner
@@ -43,10 +39,11 @@ def main():
     darknet_cmd.register(subparsers)
     deep_cmd.register(subparsers)
 
-    # --- ДОДАТКОВІ КОМАНДИ ДЛЯ АГРЕГАТОРА ---
+    # --- КОМАНДИ АГРЕГАТОРА ---
     aggregate_cmd.register(subparsers)
     aggregate_cmd.register_analyze(subparsers)
     aggregate_cmd.register_connections(subparsers)
+    aggregate_cmd.register_correlate(subparsers)  # НОВА КОМАНДА
 
     args = parser.parse_args()
 
