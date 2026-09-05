@@ -3,6 +3,7 @@ import sys
 import json
 from platium.core.errors import ValidationError
 from platium.intelligence.aggregator import store_scan_result, find_connections, generate_analysis_report
+from platium.intelligence.correlation import run_full_correlation
 from platium.scanners.email.scanner import search as email_search
 from platium.core.config import load_config
 
@@ -15,7 +16,6 @@ def register(subparsers):
 def run(args):
     try:
         config = load_config()
-        # Вибираємо сканер за типом
         scanners = {
             "email": email_search,
             # додати інші сканери пізніше
@@ -53,6 +53,18 @@ def run_connections(args):
     try:
         conns = find_connections(args.query)
         print(json.dumps(conns, indent=2))
+    except Exception as e:
+        print(f"[!] Error: {e}")
+        sys.exit(1)
+
+def register_correlate(subparsers):
+    parser = subparsers.add_parser("correlate", help="Run correlation engine to find relationships between entities")
+    parser.set_defaults(func=run_correlate)
+
+def run_correlate(args):
+    try:
+        relationships = run_full_correlation()
+        print(json.dumps(relationships, indent=2))
     except Exception as e:
         print(f"[!] Error: {e}")
         sys.exit(1)
