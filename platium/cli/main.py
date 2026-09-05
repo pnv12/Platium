@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import argparse
 import sys
-from platium.ui.display import display_banner
+from platium.ui.display import display_banner, print_header, print_scan_result, colorize, Color
 from platium.cli import (
     username_cmd,
     email_cmd,
@@ -14,17 +14,21 @@ from platium.cli import (
     darknet_cmd,
     deep_cmd,
     aggregate_cmd,
-    report_cmd  # додано
+    report_cmd
 )
 
 def main():
     display_banner()
+    print_header("PLATIUM PROFESSIONAL CLI", Color.BOLD)
+
     parser = argparse.ArgumentParser(
         prog="platium",
         description="Advanced OSINT Framework",
         epilog="Use 'platium <command> --help' for more info"
     )
-    parser.add_argument("--version", action="version", version="Platium 0.1.0")
+    parser.add_argument("--version", action="version", version="Platium 0.2.0")
+    parser.add_argument("--verbose", "-v", action="store_true", help="Verbose output")
+    parser.add_argument("--quiet", "-q", action="store_true", help="Quiet mode (only errors)")
 
     subparsers = parser.add_subparsers(dest="command", required=True, help="Available commands")
 
@@ -47,11 +51,14 @@ def main():
     aggregate_cmd.register_correlate(subparsers)
 
     # --- ЗВІТИ ---
-    report_cmd.register(subparsers)  # додано
+    report_cmd.register(subparsers)
 
     args = parser.parse_args()
 
     if hasattr(args, 'func'):
+        # Передаємо глобальні налаштування в команду
+        args._verbose = args.verbose
+        args._quiet = args.quiet
         args.func(args)
     else:
         parser.print_help()
