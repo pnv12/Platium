@@ -2,32 +2,32 @@ import argparse
 import sys
 import json
 from platium.core.errors import ValidationError
-from platium.intelligence.aggregator import save_search, find_connections, generate_analysis_report
+from platium.intelligence.aggregator import store_scan_result, find_connections, generate_analysis_report
+from platium.scanners.email.scanner import search as email_search
+from platium.core.config import load_config
 
 def register(subparsers):
-    parser = subparsers.add_parser("aggregate", help="Save search results to database")
-    parser.add_argument("query", help="Query to save")
-    parser.add_argument("--type", default="auto", help="Type of query (email, phone, ip, username, etc.)")
-    parser.add_argument("--data", help="JSON data to save (must be valid JSON)")
+    parser = subparsers.add_parser("aggregate", help="Store scan results in database")
+    parser.add_argument("query", help="Target to scan and store")
+    parser.add_argument("--type", default="email", choices=["email", "username", "phone", "ip"], help="Target type")
     parser.set_defaults(func=run)
 
 def run(args):
     try:
-        # Перевіряємо, чи передано дані
-        if not args.data:
-            print("[!] Error: --data is required")
-            sys.exit(1)
-        
-        # Валідуємо JSON
-        try:
-            data = json.loads(args.data)
-        except json.JSONDecodeError as e:
-            print(f"[!] Invalid JSON: {e}")
+        config = load_config()
+        # Вибираємо сканер за типом
+        scanners = {
+            "email": email_search,
+            # додати інші сканери пізніше
+        }
+        scanner = scanners.get(args.type)
+        if not scanner:
+            print(f"[!] Unsupported type: {args.type}")
             sys.exit(1)
 
-        # Зберігаємо
-        save_search(args.query, args.type, data)
-        print(f"[+] Data for '{args.query}' saved to database")
+        result = scanner(args.query, config)
+        store_scan_result(result)
+        print(f"[+] Data for '{args.query}' stored in database")
     except Exception as e:
         print(f"[!] Error: {e}")
         sys.exit(1)
@@ -45,8 +45,8 @@ def run_analyze(args):
         sys.exit(1)
 
 def register_connections(subparsers):
-    parser = subparsers.add_parser("connections", help="Find connections for a query")
-    parser.add_argument("query", help="Query to find connections for")
+    parser = subparsers.add_parser("connections", help="Find connections for an entity")
+    parser.add_argument("query", help="Entity value to find connections for")
     parser.set_defaults(func=run_connections)
 
 def run_connections(args):
