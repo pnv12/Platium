@@ -1,13 +1,12 @@
 """
-Social Scanner — пошук профілів у соцмережах (без Nitter)
+Social Scanner — пошук профілів у соцмережах (оновлена версія)
 """
 
 import requests
+from platium.core.result import ScanResult, ScanStatus
 from platium.core.config import load_config
 from platium.utils.network import safe_request
-from platium.core.errors import ScannerError
 
-# Реальні соцмережі з перевіркою існування профілю
 SOCIAL_PLATFORMS = {
     "Instagram": "https://www.instagram.com/{}/",
     "VK": "https://vk.com/{}",
@@ -19,20 +18,18 @@ SOCIAL_PLATFORMS = {
     "Steam": "https://steamcommunity.com/id/{}",
 }
 
-def search(username, config=None, verbose=False):
+def search(username, config=None, verbose=False) -> ScanResult:
     """
     Пошук профілів у соцмережах.
-    Повертає структурований результат з детальними статусами.
+    Повертає ScanResult з єдиним контрактом.
     """
     if config is None:
         config = load_config()
 
-    result = {
-        "target": username,
-        "scan_type": "social",
-        "sources": {},
-        "status": "empty"
-    }
+    sources = {}
+    data = {}
+    status = ScanStatus.NOT_FOUND
+    errors = []
 
     timeout = config.get("timeout", 10)
     headers = {"User-Agent": "Mozilla/5.0"}
@@ -42,41 +39,60 @@ def search(username, config=None, verbose=False):
         try:
             resp = safe_request(url, headers=headers, timeout=timeout)
             if resp is None:
-                result["sources"][name] = {"status": "skipped", "message": "No response"}
+                sources[name] = {"status": "error", "message": "No response"}
+                errors.append(f"{name}: no response")
                 continue
 
             if resp.status_code in (301, 302, 303, 307, 308):
-                # Редирект на сторінку пошуку або на профіль
                 location = resp.headers.get("Location", "")
                 if "/search/" in location or "/login" in location:
-                    result["sources"][name] = {"status": "not_found", "code": resp.status_code}
+                    sources[name] = {"status": "not_found", "code": resp.status_code}
                 else:
-                    result["sources"][name] = {"status": "found", "url": url, "code": resp.status_code}
+                    sources[name] = {"status": "found", "url": url, "code": resp.status_code}
+                    data[name] = {"url": url, "status": "found"}
+                    if status != ScanStatus.SUCCESS:
+                        status = ScanStatus.SUCCESS
             elif resp.status_code == 200:
-                # Перевіряємо, чи це не сторінка пошуку або помилки
                 text_lower = resp.text.lower()
                 if "not found" in text_lower or "doesn't exist" in text_lower:
-                    result["sources"][name] = {"status": "not_found", "code": 200}
+                    sources[name] = {"status": "not_found", "code": 200}
                 elif "page not found" in text_lower or "sorry, this page isn't available" in text_lower:
-                    result["sources"][name] = {"status": "not_found", "code": 200}
+                    sources[name] = {"status": "not_found", "code": 200}
                 else:
-                    result["sources"][name] = {"status": "found", "url": url, "code": 200}
+                    sources[name] = {"status": "found", "url": url, "code": 200}
+                    data[name] = {"url": url, "status": "found"}
+                    if status != ScanStatus.SUCCESS:
+                        status = ScanStatus.SUCCESS
             elif resp.status_code == 404:
-                result["sources"][name] = {"status": "not_found", "code": 404}
+                sources[name] = {"status": "not_found", "code": 404}
             elif resp.status_code == 429:
-                result["sources"][name] = {"status": "rate_limited", "message": "Too many requests", "code": 429}
+                sources[name] = {"status": "rate_limited", "message": "Too many requests", "code": 429}
+                errors.append(f"{name}: rate limited")
             else:
-                result["sources"][name] = {"status": "error", "code": resp.status_code, "message": "HTTP error"}
+                sources[name] = {"status": "error", "code": resp.status_code, "message": "HTTP error"}
+                errors.append(f"{name}: HTTP {resp.status_code}")
         except Exception as e:
-            result["sources"][name] = {"status": "error", "message": str(e)}
+            sources[name] = {"status": "error", "message": str(e)}
+            errors.append(f"{name}: {str(e)}")
 
-    # Загальний статус
-    found_count = sum(1 for s in result["sources"].values() if s.get("status") == "found")
-    if found_count > 0:
-        result["status"] = "success"
-    elif any(s.get("status") in ("error", "rate_limited") for s in result["sources"].values()):
-        result["status"] = "partial"
-    else:
-        result["status"] = "empty"
+    # Якщо всі джерела помилкові або rate limited — статус ERROR
+    if status == ScanStatus.NOT_FOUND and errors:
+        status = ScanStatus.ERROR if len(errors) == len(SOCIAL_PLATFORMS) else ScanStatus.PARTIAL
+
+    # Якщо є помилки, але є й успішні джерела — PARTIAL
+    if status == ScanStatus.SUCCESS and errors:
+        status = ScanStatus.PARTIAL
+
+    # Створюємо результат
+    result = ScanResult(
+        target=username,
+        scanner="social",
+        status=status,
+        data=data,
+        sources=sources,
+        error="; ".join(errors) if errors else None,
+        confidence=0.85 if status == ScanStatus.SUCCESS else 0.2,
+        evidence=[f"Checked {len(SOCIAL_PLATFORMS)} platforms"]
+    )
 
     return result
