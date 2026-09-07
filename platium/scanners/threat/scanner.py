@@ -1,33 +1,21 @@
-"""
-Threat Scanner — перевірка IP/доменів на загрози (оновлена версія)
-"""
-
 import requests
+from platium.core.config import config
 from platium.core.result import ScanResult, ScanStatus
-from platium.core.config import load_config
 from platium.utils.network import safe_request
-from platium.core.errors import APILimitError, NetworkError
 
-def search(query, config=None, verbose=False) -> ScanResult:
-    """
-    Перевіряє IP/домен на загрози через VirusTotal та AbuseIPDB.
-    Повертає ScanResult з єдиним контрактом.
-    """
-    if config is None:
-        config = load_config()
-
+def search(query, verbose=False):
     sources = {}
     data = {}
     status = ScanStatus.NOT_FOUND
     errors = []
+    timeout = config.timeout
 
-    # 1. VirusTotal
-    vt_key = config.get("virustotal_key")
+    vt_key = config.get_api_key("virustotal_key")
     if vt_key:
         try:
             url = f"https://www.virustotal.com/api/v3/ip_addresses/{query}"
             headers = {"x-apikey": vt_key}
-            resp = safe_request(url, headers=headers, timeout=config.get("timeout", 10))
+            resp = safe_request(url, headers=headers, timeout=timeout)
             if resp is None:
                 sources["virustotal"] = {"status": "error", "message": "No response"}
                 errors.append("VirusTotal: no response")
@@ -50,15 +38,13 @@ def search(query, config=None, verbose=False) -> ScanResult:
             errors.append(f"VirusTotal: {str(e)}")
     else:
         sources["virustotal"] = {"status": "skipped", "message": "No API key"}
-        errors.append("VirusTotal: skipped (no key)")
 
-    # 2. AbuseIPDB
-    abuse_key = config.get("abuseipdb_key")
+    abuse_key = config.get_api_key("abuseipdb_key")
     if abuse_key:
         try:
             url = f"https://api.abuseipdb.com/api/v2/check?ipAddress={query}"
             headers = {"Key": abuse_key, "Accept": "application/json"}
-            resp = safe_request(url, headers=headers, timeout=config.get("timeout", 10))
+            resp = safe_request(url, headers=headers, timeout=timeout)
             if resp is None:
                 sources["abuseipdb"] = {"status": "error", "message": "No response"}
                 errors.append("AbuseIPDB: no response")
@@ -82,11 +68,8 @@ def search(query, config=None, verbose=False) -> ScanResult:
             errors.append(f"AbuseIPDB: {str(e)}")
     else:
         sources["abuseipdb"] = {"status": "skipped", "message": "No API key"}
-        errors.append("AbuseIPDB: skipped (no key)")
 
-    # Визначаємо загальний статус
     if status == ScanStatus.NOT_FOUND and errors:
-        # Якщо всі джерела пропущені або помилкові
         if all(s.get("status") in ("skipped", "error", "rate_limited") for s in sources.values()):
             status = ScanStatus.ERROR
         else:
@@ -95,12 +78,10 @@ def search(query, config=None, verbose=False) -> ScanResult:
     if status == ScanStatus.SUCCESS and errors:
         status = ScanStatus.PARTIAL
 
-    # Якщо всі джерела пропущені — не вважаємо це success
     if all(s.get("status") == "skipped" for s in sources.values()):
         status = ScanStatus.SKIPPED
         errors = ["All sources skipped (no API keys)"]
 
-    # Створюємо результат
     result = ScanResult(
         target=query,
         scanner="threat",
@@ -111,5 +92,4 @@ def search(query, config=None, verbose=False) -> ScanResult:
         confidence=0.9 if status == ScanStatus.SUCCESS else 0.1,
         evidence=[f"Checked {len(sources)} sources"]
     )
-
     return result
