@@ -1,13 +1,8 @@
-"""
-Username Scanner — пошук нікнейму на реально робочих платформах (~30)
-"""
-
 import concurrent.futures
-from platium.core.config import get_user_agent
-from platium.utils.network import safe_request
-from platium.core.errors import ScannerError
+from platium.core.config import load_config
+from platium.core.result import ScanResult, ScanStatus
+from platium.utils.http_client import get_http_client
 
-# Реальні платформи, які коректно реагують на неіснуючі юзернейми (404 або редирект)
 PLATFORMS = {
     "GitHub": "https://github.com/{}",
     "Twitter": "https://twitter.com/{}",
@@ -41,53 +36,78 @@ PLATFORMS = {
     "TryHackMe": "https://tryhackme.com/p/{}",
 }
 
-def search(username, config=None, verbose=False):
+def search(username, config=None, verbose=False) -> ScanResult:
     """
-    Пошук нікнейму на ~30 платформах.
-    Повертає структурований результат з детальними статусами.
+    Пошук нікнейму на 30+ платформах.
+    Використовує новий HTTP Client з кешуванням.
+    Повертає ScanResult.
     """
     if config is None:
-        from platium.core.config import load_config
         config = load_config()
 
-    results = {"target": username, "scan_type": "username", "sources": {}}
-    headers = {"User-Agent": get_user_agent()}
-    timeout = config.get("timeout", 10)
+    client = get_http_client()
+    sources = {}
+    data = {}
+    status = ScanStatus.NOT_FOUND
+    errors = []
+    found_platforms = []
 
     def check_platform(name, url):
         try:
-            resp = safe_request(url.format(username), headers=headers, timeout=timeout)
+            resp = client.get(url.format(username), use_cache=True)
             if resp is None:
                 return (name, {"status": "error", "message": "No response"})
             if resp.status_code in (301, 302, 303, 307, 308):
-                return (name, {"status": "redirect", "url": resp.headers.get("Location", "unknown"), "code": resp.status_code})
+                location = resp.headers.get("Location", "")
+                if "/search/" in location or "/login" in location:
+                    return (name, {"status": "not_found", "code": resp.status_code})
+                return (name, {"status": "found", "url": url.format(username), "code": resp.status_code})
             if resp.status_code == 200:
-                # Перевіряємо, чи це не сторінка пошуку або помилка
-                if "not found" in resp.text.lower() or "doesn't exist" in resp.text.lower():
+                text_lower = resp.text.lower()
+                if "not found" in text_lower or "doesn't exist" in text_lower:
+                    return (name, {"status": "not_found", "code": 200})
+                if "page not found" in text_lower or "sorry, this page isn't available" in text_lower:
                     return (name, {"status": "not_found", "code": 200})
                 return (name, {"status": "found", "url": url.format(username), "code": 200})
-            elif resp.status_code == 404:
+            if resp.status_code == 404:
                 return (name, {"status": "not_found", "code": 404})
-            elif resp.status_code == 429:
-                return (name, {"status": "rate_limited", "message": "Too many requests", "code": 429})
-            else:
-                return (name, {"status": "error", "code": resp.status_code, "message": "HTTP error"})
+            if resp.status_code == 429:
+                return (name, {"status": "rate_limited", "code": 429})
+            return (name, {"status": "error", "code": resp.status_code})
         except Exception as e:
             return (name, {"status": "error", "message": str(e)})
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
+    max_workers = config.get("max_workers", 20)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = {executor.submit(check_platform, name, url): name for name, url in PLATFORMS.items()}
         for future in concurrent.futures.as_completed(futures):
             name, result = future.result()
-            results["sources"][name] = result
+            sources[name] = result
+            if result.get("status") == "found":
+                found_platforms.append(name)
+                data[name] = {"url": result.get("url"), "status": "found"}
 
-    # Загальний статус
-    found_count = sum(1 for s in results["sources"].values() if s.get("status") == "found")
-    if found_count > 0:
-        results["status"] = "success"
-    elif any(s.get("status") in ("error", "rate_limited") for s in results["sources"].values()):
-        results["status"] = "partial"
+    if found_platforms:
+        status = ScanStatus.SUCCESS
+        confidence = min(0.9, 0.5 + 0.05 * len(found_platforms))
+    elif any(s.get("status") in ("error", "rate_limited") for s in sources.values()):
+        status = ScanStatus.PARTIAL
+        confidence = 0.2
     else:
-        results["status"] = "empty"
+        status = ScanStatus.NOT_FOUND
+        confidence = 0.0
 
-    return results
+    for name, result in sources.items():
+        if result.get("status") in ("error", "rate_limited"):
+            errors.append(f"{name}: {result.get('message', 'Unknown error')}")
+
+    return ScanResult(
+        target=username,
+        scanner="username",
+        status=status,
+        data=data,
+        sources=sources,
+        error="; ".join(errors) if errors else None,
+        confidence=confidence,
+        evidence=[f"Found on {len(found_platforms)} platforms"] if found_platforms else [],
+    )
