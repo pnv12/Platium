@@ -1,108 +1,87 @@
-"""
-IP Scanner — геолокація, WHOIS, проксі-детекція, Shodan (опціонально)
-"""
-
 import requests
 import socket
+from platium.core.config import config
 from platium.core.result import ScanResult, ScanStatus
-from platium.core.config import load_config
-from platium.core.errors import NetworkError
 from platium.utils.network import safe_request
 
-def search(ip, config=None, verbose=False) -> ScanResult:
-    """
-    Аналізує IP-адресу: геолокація, WHOIS, проксі/VPN, Shodan (якщо є ключ).
-    Повертає ScanResult з єдиним контрактом.
-    """
-    if config is None:
-        config = load_config()
-
+def search(ip, verbose=False):
     sources = {}
     data = {}
     status = ScanStatus.NOT_FOUND
     errors = []
+    timeout = config.timeout
 
-    # 1. Геолокація через ip-api.com (без ключа)
     try:
-        resp = safe_request(f"http://ip-api.com/json/{ip}?fields=status,country,city,isp,org,as,proxy,hosting", timeout=config.get("timeout", 10))
-        if resp is None:
-            sources["geo_ipapi"] = {"status": "error", "message": "No response"}
-            errors.append("GeoIP: no response")
-        elif resp.status_code == 200:
-            data_geo = resp.json()
-            if data_geo.get('status') == 'success':
-                sources["geo_ipapi"] = {"status": "success", "data": data_geo}
-                data["geo"] = data_geo
-                status = ScanStatus.PARTIAL if status == ScanStatus.NOT_FOUND else status
+        url = f"http://ip-api.com/json/{ip}?fields=status,country,city,isp,org,as,proxy,hosting"
+        resp = safe_request(url, timeout=timeout)
+        if resp and resp.status_code == 200:
+            geo_data = resp.json()
+            if geo_data.get('status') == 'success':
+                sources["ip-api"] = {"status": "success", "data": geo_data}
+                data["location"] = {
+                    "country": geo_data.get('country'),
+                    "city": geo_data.get('city'),
+                    "isp": geo_data.get('isp'),
+                    "org": geo_data.get('org'),
+                    "as": geo_data.get('as'),
+                    "proxy": geo_data.get('proxy', False),
+                    "hosting": geo_data.get('hosting', False)
+                }
+                status = ScanStatus.SUCCESS
             else:
-                sources["geo_ipapi"] = {"status": "error", "message": data_geo.get('message', 'Unknown error')}
-                errors.append(f"GeoIP: {data_geo.get('message', 'Unknown error')}")
+                sources["ip-api"] = {"status": "error", "message": geo_data.get('message', 'Unknown error')}
+                errors.append("ip-api: error")
         else:
-            sources["geo_ipapi"] = {"status": "error", "code": resp.status_code, "message": "HTTP error"}
-            errors.append(f"GeoIP: HTTP {resp.status_code}")
+            sources["ip-api"] = {"status": "error", "code": resp.status_code if resp else 0, "message": "HTTP error"}
+            errors.append(f"ip-api: HTTP {resp.status_code if resp else 'no response'}")
     except Exception as e:
-        sources["geo_ipapi"] = {"status": "error", "message": str(e)}
-        errors.append(f"GeoIP: {str(e)}")
+        sources["ip-api"] = {"status": "error", "message": str(e)}
+        errors.append(f"ip-api: {str(e)}")
 
-    # 2. WHOIS (через python-whois)
     try:
         import whois
         domain_info = whois.whois(ip)
-        if domain_info:
-            sources["whois"] = {
-                "status": "success",
-                "registrar": getattr(domain_info, 'registrar', 'N/A'),
-                "creation_date": str(getattr(domain_info, 'creation_date', 'N/A')),
-                "expiration_date": str(getattr(domain_info, 'expiration_date', 'N/A')),
-            }
-            data["whois"] = sources["whois"]
-            if status == ScanStatus.NOT_FOUND:
-                status = ScanStatus.PARTIAL
-        else:
-            sources["whois"] = {"status": "not_found", "message": "WHOIS data not available"}
-            errors.append("WHOIS: no data")
+        sources["whois"] = {"status": "success", "data": {
+            "registrar": getattr(domain_info, 'registrar', 'N/A'),
+            "creation_date": str(getattr(domain_info, 'creation_date', 'N/A')),
+            "expiration_date": str(getattr(domain_info, 'expiration_date', 'N/A')),
+        }}
+        data["whois"] = sources["whois"]["data"]
+        if status != ScanStatus.SUCCESS:
+            status = ScanStatus.PARTIAL
     except Exception as e:
         sources["whois"] = {"status": "error", "message": str(e)}
-        errors.append(f"WHOIS: {str(e)}")
+        errors.append(f"whois: {str(e)}")
 
-    # 3. Проксі/VPN детекція (на основі даних ip-api)
-    if data.get("geo", {}).get("proxy") or data.get("geo", {}).get("hosting"):
-        data["proxy_detected"] = {
-            "proxy": data["geo"].get("proxy", False),
-            "hosting": data["geo"].get("hosting", False)
-        }
+    if data.get("location", {}).get("proxy"):
+        data["proxy_detected"] = True
+        sources["proxy"] = {"status": "success", "message": "Proxy/VPN detected"}
     else:
-        data["proxy_detected"] = {"proxy": False, "hosting": False}
+        data["proxy_detected"] = False
+        sources["proxy"] = {"status": "not_found", "message": "No proxy/VPN detected"}
 
-    # 4. Shodan (опціонально, якщо є ключ)
-    shodan_key = config.get("shodan_key")
+    if status == ScanStatus.NOT_FOUND and errors:
+        status = ScanStatus.ERROR
+
+    if status == ScanStatus.SUCCESS and errors:
+        status = ScanStatus.PARTIAL
+
+    shodan_key = config.get_api_key("shodan_key")
     if shodan_key:
         try:
             import shodan
             api = shodan.Shodan(shodan_key)
             host = api.host(ip)
-            sources["shodan"] = {
-                "status": "success",
-                "ports": host.get('ports', []),
-                "isp": host.get('isp', 'N/A'),
-                "org": host.get('org', 'N/A')
-            }
-            data["shodan"] = sources["shodan"]
-            if status == ScanStatus.NOT_FOUND:
+            sources["shodan"] = {"status": "success", "data": {"ports": host.get('ports', [])}}
+            data["shodan"] = {"ports": host.get('ports', [])}
+            if status != ScanStatus.SUCCESS:
                 status = ScanStatus.PARTIAL
         except Exception as e:
             sources["shodan"] = {"status": "error", "message": str(e)}
-            errors.append(f"Shodan: {str(e)}")
+            errors.append(f"shodan: {str(e)}")
     else:
-        sources["shodan"] = {"status": "skipped", "message": "No API key"}
+        sources["shodan"] = {"status": "skipped", "message": "No Shodan API key"}
 
-    # Визначаємо фінальний статус
-    if status == ScanStatus.NOT_FOUND and errors:
-        status = ScanStatus.PARTIAL if len(errors) < len(sources) else ScanStatus.ERROR
-    if status == ScanStatus.PARTIAL and not errors:
-        status = ScanStatus.SUCCESS if data else ScanStatus.NOT_FOUND
-
-    # Створюємо результат
     result = ScanResult(
         target=ip,
         scanner="ip",
@@ -110,8 +89,7 @@ def search(ip, config=None, verbose=False) -> ScanResult:
         data=data,
         sources=sources,
         error="; ".join(errors) if errors else None,
-        confidence=0.7 if status == ScanStatus.SUCCESS else 0.3,
+        confidence=0.9 if status == ScanStatus.SUCCESS else 0.3,
         evidence=[f"Checked {len(sources)} sources"]
     )
-
     return result
