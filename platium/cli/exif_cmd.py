@@ -1,9 +1,7 @@
 import argparse
 import sys
 import json
-from platium.core.errors import ValidationError, ScannerError
-from platium.core.config import load_config
-from platium.ui.display import print_result
+from platium.core.config import config
 from platium.scanners.exif.scanner import search
 
 def register(subparsers):
@@ -16,22 +14,16 @@ def register(subparsers):
 
 def run(args):
     try:
-        config = load_config()
-        results = search(args.query, config, args.verbose)
-        
+        result = search(args.query, args.verbose)
         if args.json:
-            print(json.dumps(results, indent=2))
+            print(result.to_json())
         else:
-            print_result(results, "exif")
-        
+            print(f"\n[+] Results for EXIF:")
+            print(result.to_json())
         if args.output:
             with open(args.output, 'w') as f:
-                json.dump(results, f, indent=2)
+                f.write(result.to_json())
             print(f"[+] Report saved to {args.output}")
-            
-    except ScannerError as e:
-        print(f"[!] Scanner error: {e}")
-        sys.exit(1)
     except Exception as e:
-        print(f"[!] Unexpected error: {e}")
+        print(f"[!] Error: {e}")
         sys.exit(1)
