@@ -1,11 +1,13 @@
 import argparse
 import sys
 import json
-from platium.core.errors import ValidationError
-from platium.intelligence.aggregator import store_scan_result, find_connections, generate_analysis_report
-from platium.intelligence.correlation import run_full_correlation
+from platium.core.config import config
+from platium.core.normalizer import normalize_result, store_normalized_result
 from platium.scanners.email.scanner import search as email_search
-from platium.core.config import load_config
+from platium.scanners.username.scanner import search as username_search
+from platium.scanners.phone.scanner import search as phone_search
+from platium.scanners.ip.scanner import search as ip_search
+from platium.intelligence.aggregator import find_connections, generate_analysis_report
 
 def register(subparsers):
     parser = subparsers.add_parser("aggregate", help="Store scan results in database")
@@ -15,19 +17,20 @@ def register(subparsers):
 
 def run(args):
     try:
-        config = load_config()
         scanners = {
             "email": email_search,
-            # додати інші сканери пізніше
+            "username": username_search,
+            "phone": phone_search,
+            "ip": ip_search,
         }
         scanner = scanners.get(args.type)
         if not scanner:
             print(f"[!] Unsupported type: {args.type}")
             sys.exit(1)
 
-        result = scanner(args.query, config)
-        store_scan_result(result)
-        print(f"[+] Data for '{args.query}' stored in database")
+        result = scanner(args.query)
+        entity_id = store_normalized_result(result)
+        print(f"[+] Data for '{args.query}' stored (entity_id: {entity_id})")
     except Exception as e:
         print(f"[!] Error: {e}")
         sys.exit(1)
@@ -53,18 +56,6 @@ def run_connections(args):
     try:
         conns = find_connections(args.query)
         print(json.dumps(conns, indent=2))
-    except Exception as e:
-        print(f"[!] Error: {e}")
-        sys.exit(1)
-
-def register_correlate(subparsers):
-    parser = subparsers.add_parser("correlate", help="Run correlation engine to find relationships between entities")
-    parser.set_defaults(func=run_correlate)
-
-def run_correlate(args):
-    try:
-        relationships = run_full_correlation()
-        print(json.dumps(relationships, indent=2))
     except Exception as e:
         print(f"[!] Error: {e}")
         sys.exit(1)
