@@ -1,19 +1,18 @@
 import requests
 import socket
-from platium.core.config import config
 from platium.core.result import ScanResult, ScanStatus
+from platium.core.config import config
 from platium.utils.network import safe_request
 
-def search(ip, verbose=False):
+def search(ip, verbose=False) -> ScanResult:
     sources = {}
     data = {}
     status = ScanStatus.NOT_FOUND
     errors = []
-    timeout = config.timeout
 
     try:
         url = f"http://ip-api.com/json/{ip}?fields=status,country,city,isp,org,as,proxy,hosting"
-        resp = safe_request(url, timeout=timeout)
+        resp = safe_request(url, timeout=config.timeout)
         if resp and resp.status_code == 200:
             geo_data = resp.json()
             if geo_data.get('status') == 'success':
@@ -62,27 +61,10 @@ def search(ip, verbose=False):
 
     if status == ScanStatus.NOT_FOUND and errors:
         status = ScanStatus.ERROR
-
     if status == ScanStatus.SUCCESS and errors:
         status = ScanStatus.PARTIAL
 
-    shodan_key = config.get_api_key("shodan_key")
-    if shodan_key:
-        try:
-            import shodan
-            api = shodan.Shodan(shodan_key)
-            host = api.host(ip)
-            sources["shodan"] = {"status": "success", "data": {"ports": host.get('ports', [])}}
-            data["shodan"] = {"ports": host.get('ports', [])}
-            if status != ScanStatus.SUCCESS:
-                status = ScanStatus.PARTIAL
-        except Exception as e:
-            sources["shodan"] = {"status": "error", "message": str(e)}
-            errors.append(f"shodan: {str(e)}")
-    else:
-        sources["shodan"] = {"status": "skipped", "message": "No Shodan API key"}
-
-    result = ScanResult(
+    return ScanResult(
         target=ip,
         scanner="ip",
         status=status,
@@ -91,5 +73,4 @@ def search(ip, verbose=False):
         error="; ".join(errors) if errors else None,
         confidence=0.9 if status == ScanStatus.SUCCESS else 0.3,
         evidence=[f"Checked {len(sources)} sources"]
-    )
-    return result
+            )
