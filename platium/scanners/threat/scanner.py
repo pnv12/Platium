@@ -1,21 +1,20 @@
 import requests
-from platium.core.config import config
 from platium.core.result import ScanResult, ScanStatus
+from platium.core.config import config
 from platium.utils.network import safe_request
 
-def search(query, verbose=False):
+def search(query, verbose=False) -> ScanResult:
     sources = {}
     data = {}
     status = ScanStatus.NOT_FOUND
     errors = []
-    timeout = config.timeout
 
     vt_key = config.get_api_key("virustotal_key")
     if vt_key:
         try:
             url = f"https://www.virustotal.com/api/v3/ip_addresses/{query}"
             headers = {"x-apikey": vt_key}
-            resp = safe_request(url, headers=headers, timeout=timeout)
+            resp = safe_request(url, headers=headers, timeout=config.timeout)
             if resp is None:
                 sources["virustotal"] = {"status": "error", "message": "No response"}
                 errors.append("VirusTotal: no response")
@@ -38,13 +37,14 @@ def search(query, verbose=False):
             errors.append(f"VirusTotal: {str(e)}")
     else:
         sources["virustotal"] = {"status": "skipped", "message": "No API key"}
+        errors.append("VirusTotal: skipped (no key)")
 
     abuse_key = config.get_api_key("abuseipdb_key")
     if abuse_key:
         try:
             url = f"https://api.abuseipdb.com/api/v2/check?ipAddress={query}"
             headers = {"Key": abuse_key, "Accept": "application/json"}
-            resp = safe_request(url, headers=headers, timeout=timeout)
+            resp = safe_request(url, headers=headers, timeout=config.timeout)
             if resp is None:
                 sources["abuseipdb"] = {"status": "error", "message": "No response"}
                 errors.append("AbuseIPDB: no response")
@@ -68,21 +68,20 @@ def search(query, verbose=False):
             errors.append(f"AbuseIPDB: {str(e)}")
     else:
         sources["abuseipdb"] = {"status": "skipped", "message": "No API key"}
+        errors.append("AbuseIPDB: skipped (no key)")
 
     if status == ScanStatus.NOT_FOUND and errors:
         if all(s.get("status") in ("skipped", "error", "rate_limited") for s in sources.values()):
             status = ScanStatus.ERROR
         else:
             status = ScanStatus.PARTIAL
-
     if status == ScanStatus.SUCCESS and errors:
         status = ScanStatus.PARTIAL
-
     if all(s.get("status") == "skipped" for s in sources.values()):
         status = ScanStatus.SKIPPED
         errors = ["All sources skipped (no API keys)"]
 
-    result = ScanResult(
+    return ScanResult(
         target=query,
         scanner="threat",
         status=status,
@@ -92,4 +91,3 @@ def search(query, verbose=False):
         confidence=0.9 if status == ScanStatus.SUCCESS else 0.1,
         evidence=[f"Checked {len(sources)} sources"]
     )
-    return result
