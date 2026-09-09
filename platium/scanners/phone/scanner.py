@@ -1,40 +1,55 @@
 import phonenumbers
 from phonenumbers import carrier, geocoder, timezone
-from platium.core.config import load_config
-from platium.core.errors import ValidationError, ScannerError
+from platium.core.result import ScanResult, ScanStatus
+from platium.core.config import config
 
-def search(phone, config=None, verbose=False):
+def search(phone, verbose=False) -> ScanResult:
     """
-    Аналізує номер телефону: країна, оператор, часовий пояс.
-    Повертає структурований результат.
+    Аналізує номер телефону.
+    Повертає ScanResult.
     """
-    if config is None:
-        config = load_config()
-    
-    result = {
-        "target": phone,
-        "scan_type": "phone",
-        "status": "unknown",
-        "data": {}
-    }
-    
+    sources = {}
+    data = {}
+    errors = []
+    status = ScanStatus.NOT_FOUND
+
     try:
         number = phonenumbers.parse(phone, None)
         if not phonenumbers.is_valid_number(number):
-            result["status"] = "invalid"
-            result["error"] = "Invalid phone number"
-            return result
-        
-        result["data"]["country"] = geocoder.description_for_number(number, "en")
-        result["data"]["operator"] = carrier.name_for_number(number, "en")
-        result["data"]["timezone"] = timezone.time_zones_for_number(number)
-        result["status"] = "valid"
-        
+            return ScanResult(
+                target=phone,
+                scanner="phone",
+                status=ScanStatus.INVALID,
+                error="Invalid phone number"
+            )
+
+        data["country"] = geocoder.description_for_number(number, "en")
+        data["operator"] = carrier.name_for_number(number, "en")
+        data["timezone"] = timezone.time_zones_for_number(number)
+
+        sources["phonenumbers"] = {"status": "success", "data": data}
+        status = ScanStatus.SUCCESS
+
     except phonenumbers.NumberParseException as e:
-        result["status"] = "error"
-        result["error"] = str(e)
+        return ScanResult.error_result(
+            target=phone,
+            scanner="phone",
+            error=str(e)
+        )
     except Exception as e:
-        result["status"] = "error"
-        result["error"] = str(e)
-    
-    return result
+        return ScanResult.error_result(
+            target=phone,
+            scanner="phone",
+            error=str(e)
+        )
+
+    return ScanResult(
+        target=phone,
+        scanner="phone",
+        status=status,
+        data=data,
+        sources=sources,
+        error="; ".join(errors) if errors else None,
+        confidence=0.95 if status == ScanStatus.SUCCESS else 0.0,
+        evidence=[f"Country: {data.get('country')}", f"Operator: {data.get('operator')}"]
+    )
