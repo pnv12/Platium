@@ -1,20 +1,11 @@
-import os
 import sqlite3
 import json
 from datetime import datetime
+from platium.core.paths import DB_PATH, ensure_dirs
 from platium.core.result import ScanResult, ScanStatus
 
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-DATA_DIR = os.path.join(BASE_DIR, "data")
-DB_PATH = os.path.join(DATA_DIR, "platium.db")
-
-def _ensure_data_dir():
-    if not os.path.exists(DATA_DIR):
-        os.makedirs(DATA_DIR)
-
 def _get_connection():
-    """Створює та повертає з'єднання з БД з перевіркою."""
-    _ensure_data_dir()
+    ensure_dirs()
     return sqlite3.connect(DB_PATH)
 
 def init_db():
@@ -241,4 +232,4 @@ def generate_analysis_report():
         "relationships": relationships_count,
         "type_distribution": dict(type_stats),
         "generated": datetime.now().isoformat()
-        }
+    }
