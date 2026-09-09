@@ -1,15 +1,12 @@
 import os
 import json
 from datetime import datetime
-from platium.core.config import config
+from platium.core.paths import REPORTS_DIR, ensure_dirs
 from platium.core.errors import ScannerError
-
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-REPORTS_DIR = os.path.join(BASE_DIR, "data", "reports")
+from platium.core.config import config
 
 def _ensure_reports_dir():
-    if not os.path.exists(REPORTS_DIR):
-        os.makedirs(REPORTS_DIR)
+    ensure_dirs()
 
 def _is_safe_path(path):
     normalized = os.path.normpath(os.path.abspath(path))
@@ -37,6 +34,7 @@ def generate(data, output_path=None):
     json_path = base_path + '.json'
     html_path = base_path + '.html'
 
+    # TXT report
     with open(txt_path, 'w', encoding='utf-8') as f:
         f.write("="*60 + "\n")
         f.write("PLATIUM OSINT REPORT\n")
@@ -47,9 +45,11 @@ def generate(data, output_path=None):
             f.write(json.dumps(value, indent=2, ensure_ascii=False))
             f.write("\n\n")
 
+    # JSON report
     with open(json_path, 'w', encoding='utf-8') as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
 
+    # HTML report
     with open(html_path, 'w', encoding='utf-8') as f:
         f.write("<!DOCTYPE html><html><head><meta charset='utf-8'><title>Platium Report</title>")
         f.write("<style>body{font-family:monospace;background:#0a0a0a;color:#00ff00;padding:20px;}")
