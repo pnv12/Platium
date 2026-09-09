@@ -1,8 +1,10 @@
+import os
 import sqlite3
 import json
 from datetime import datetime
+from platium.core.result import ScanResult
+from platium.core.normalizer import normalize_result, Normalizer
 from platium.core.paths import DB_PATH, ensure_dirs
-from platium.core.result import ScanResult, ScanStatus
 
 def _get_connection():
     ensure_dirs()
@@ -81,7 +83,8 @@ def save_observation(entity_id, scanner, source, status, data=None, confidence=0
             json.dumps(data) if data else None,
             confidence,
             evidence
-        ))
+        )
+        )
         conn.commit()
 
 def save_relationship(source_entity_id, target_entity_id, relation_type, confidence=0.0, evidence=None):
@@ -96,96 +99,18 @@ def save_relationship(source_entity_id, target_entity_id, relation_type, confide
             relation_type,
             confidence,
             evidence
-        ))
+        )
+        )
         conn.commit()
 
 def store_scan_result(result: ScanResult):
+    """
+    Зберігає результат сканування, використовуючи нормалізатор.
+    """
+    from platium.core.normalizer import Normalizer
     init_db()
-    target = result.target
-    scanner = result.scanner
-    status = result.status.value
-    data = result.data
-    sources = result.sources
-
-    entity_type = {
-        "email": "email",
-        "username": "username",
-        "phone": "phone",
-        "ip": "ip",
-        "social": "username",
-        "threat": "ip",
-        "graph": "username",
-        "darknet": "domain",
-        "deep": "auto"
-    }.get(scanner, "unknown")
-
-    entity_id = _get_or_create_entity(entity_type, target)
-
-    for source, source_data in sources.items():
-        status_str = source_data.get("status", "unknown")
-        confidence = 0.5 if status_str in ("found", "success") else 0.1
-        evidence = source_data.get("url") or source_data.get("message") or source_data.get("evidence")
-        save_observation(
-            entity_id=entity_id,
-            scanner=scanner,
-            source=source,
-            status=status_str,
-            data=source_data,
-            confidence=confidence,
-            evidence=evidence
-        )
-
-    if data:
-        if scanner == "email" and "hibp" in data:
-            breaches = data.get("hibp", [])
-            if isinstance(breaches, list):
-                for breach in breaches:
-                    breach_entity_id = _get_or_create_entity("breach", breach)
-                    save_relationship(
-                        source_entity_id=entity_id,
-                        target_entity_id=breach_entity_id,
-                        relation_type="appears_in_breach",
-                        confidence=0.9,
-                        evidence=f"Found in {breach}"
-                    )
-
-        if scanner == "username":
-            for platform, info in data.items():
-                if isinstance(info, dict) and info.get("status") == "found":
-                    platform_entity_id = _get_or_create_entity("platform", platform)
-                    save_relationship(
-                        source_entity_id=entity_id,
-                        target_entity_id=platform_entity_id,
-                        relation_type="has_profile_on",
-                        confidence=0.9,
-                        evidence=info.get("url", "")
-                    )
-
-        if scanner == "phone":
-            phone_data = data.get("data", {})
-            if phone_data.get("operator"):
-                operator = phone_data["operator"]
-                operator_entity_id = _get_or_create_entity("operator", operator)
-                save_relationship(
-                    source_entity_id=entity_id,
-                    target_entity_id=operator_entity_id,
-                    relation_type="uses_operator",
-                    confidence=0.9,
-                    evidence=operator
-                )
-
-        if scanner == "ip":
-            location = data.get("location", {})
-            if location.get("country"):
-                country = location["country"]
-                country_entity_id = _get_or_create_entity("country", country)
-                save_relationship(
-                    source_entity_id=entity_id,
-                    target_entity_id=country_entity_id,
-                    relation_type="located_in",
-                    confidence=0.85,
-                    evidence=country
-                )
+    normalized = Normalizer.normalize(result)
+    return normalized["entity_id"]
 
 def find_connections(entity_value):
     with _get_connection() as conn:
