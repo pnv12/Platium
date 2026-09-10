@@ -1,41 +1,109 @@
-import argparse
-import sys
 import json
-from platium.core.validators import validate_username, validate_email, validate_ip, validate_phone
-from platium.core.errors import ValidationError, ScannerError
+import sys
+
 from platium.core.config import load_config
-from platium.ui.display import print_result
+from platium.core.errors import ValidationError, ScannerError
+from platium.ui.display import get_ui
 from platium.scanners.deep.scanner import deep_search
 
+
 def register(subparsers):
-    parser = subparsers.add_parser("deep", help="Deep OSINT search (auto-detect type)")
-    parser.add_argument("query", help="Email, phone, IP, or username")
-    parser.add_argument("-v", "--verbose", action="store_true", help="Verbose output")
-    parser.add_argument("--json", action="store_true", help="Output as JSON")
-    parser.add_argument("-o", "--output", help="Save report to file")
+    parser = subparsers.add_parser(
+        "deep",
+        help="Deep OSINT search (auto-detect type)"
+    )
+
+    parser.add_argument(
+        "query",
+        help="Email, phone, IP, or username"
+    )
+
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="Verbose output"
+    )
+
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output as JSON"
+    )
+
+    parser.add_argument(
+        "-o",
+        "--output",
+        help="Save report to file"
+    )
+
     parser.set_defaults(func=run)
 
+
 def run(args):
+    ui = get_ui(
+        verbose=getattr(args, "_verbose", False)
+    )
+
     try:
+        ui.info(
+            f"Starting deep search: {args.query}"
+        )
+
         config = load_config()
-        results = deep_search(args.query, config, args.verbose)
-        
+
+        results = deep_search(
+            args.query,
+            config,
+            getattr(args, "verbose", False)
+            or getattr(args, "_verbose", False)
+        )
+
         if args.json:
-            print(json.dumps(results, indent=2))
+            print(
+                json.dumps(
+                    results,
+                    indent=2,
+                    ensure_ascii=False
+                )
+            )
         else:
-            print_result(results, "deep")
-        
+            ui.print_result(
+                results,
+                "deep"
+            )
+
         if args.output:
-            with open(args.output, 'w') as f:
-                json.dump(results, f, indent=2)
-            print(f"[+] Report saved to {args.output}")
-            
-    except ValidationError as e:
-        print(f"[!] Invalid input: {e}")
+            with open(
+                args.output,
+                "w",
+                encoding="utf-8"
+            ) as file:
+                json.dump(
+                    results,
+                    file,
+                    indent=2,
+                    ensure_ascii=False
+                )
+
+            ui.success(
+                f"Report saved to {args.output}"
+            )
+
+    except ValidationError as exc:
+        ui.error(
+            f"Invalid input: {exc}"
+        )
         sys.exit(1)
-    except ScannerError as e:
-        print(f"[!] Scanner error: {e}")
+
+    except ScannerError as exc:
+        ui.error(
+            f"Scanner error: {exc}"
+        )
         sys.exit(1)
-    except Exception as e:
-        print(f"[!] Unexpected error: {e}")
+
+    except Exception as exc:
+        ui.error(
+            f"Unexpected error: {exc}"
+        )
         sys.exit(1)
