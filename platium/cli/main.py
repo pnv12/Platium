@@ -1,7 +1,14 @@
 #!/usr/bin/env python3
+
 import argparse
 import sys
-from platium.ui.display import display_banner, print_header, print_scan_result, colorize, Color
+
+from platium.ui.display import (
+    display_banner,
+    print_header,
+    Color
+)
+
 from platium.cli import (
     username_cmd,
     email_cmd,
@@ -17,6 +24,7 @@ from platium.cli import (
     report_cmd
 )
 
+
 def main():
     display_banner()
     print_header("PLATIUM PROFESSIONAL CLI", Color.BOLD)
@@ -26,11 +34,32 @@ def main():
         description="Advanced OSINT Framework",
         epilog="Use 'platium <command> --help' for more info"
     )
-    parser.add_argument("--version", action="version", version="Platium 0.2.0")
-    parser.add_argument("--verbose", "-v", action="store_true", help="Verbose output")
-    parser.add_argument("--quiet", "-q", action="store_true", help="Quiet mode (only errors)")
 
-    subparsers = parser.add_subparsers(dest="command", required=True, help="Available commands")
+    parser.add_argument(
+        "--version",
+        action="version",
+        version="Platium 0.2.0"
+    )
+
+    parser.add_argument(
+        "--verbose",
+        "-v",
+        action="store_true",
+        help="Verbose output"
+    )
+
+    parser.add_argument(
+        "--quiet",
+        "-q",
+        action="store_true",
+        help="Quiet mode (only errors)"
+    )
+
+    subparsers = parser.add_subparsers(
+        dest="command",
+        required=True,
+        help="Available commands"
+    )
 
     # --- ОСНОВНІ КОМАНДИ ---
     username_cmd.register(subparsers)
@@ -55,14 +84,24 @@ def main():
 
     args = parser.parse_args()
 
-    if hasattr(args, 'func'):
-        # Передаємо глобальні налаштування в команду
-        args._verbose = args.verbose
-        args._quiet = args.quiet
+    # Передаємо глобальні налаштування в команду.
+    # Зберігаємо обидва варіанти імен для сумісності
+    # з існуючими CLI-модулями.
+    args._verbose = args.verbose
+    args._quiet = args.quiet
+
+    if hasattr(args, "verbose"):
+        args.verbose = args.verbose or args._verbose
+
+    if hasattr(args, "quiet"):
+        args.quiet = args.quiet or args._quiet
+
+    if hasattr(args, "func"):
         args.func(args)
     else:
         parser.print_help()
         sys.exit(1)
+
 
 if __name__ == "__main__":
     main()
