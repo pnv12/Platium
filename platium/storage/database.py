@@ -1,4 +1,4 @@
-            import sqlite3
+import sqlite3
 import json
 
 from platium.core.paths import DB_PATH, ensure_dirs
@@ -7,6 +7,29 @@ from platium.core.paths import DB_PATH, ensure_dirs
 def _get_connection():
     ensure_dirs()
     return sqlite3.connect(DB_PATH)
+
+
+def _serialize_value(value):
+    if value is None:
+        return None
+
+    if isinstance(value, str):
+        return value
+
+    return json.dumps(value, ensure_ascii=False)
+
+
+def _deserialize_value(value):
+    if value is None:
+        return None
+
+    if not isinstance(value, str):
+        return value
+
+    try:
+        return json.loads(value)
+    except (TypeError, json.JSONDecodeError):
+        return value
 
 
 def init_db():
@@ -130,9 +153,9 @@ def save_observation(
             scanner,
             source,
             status,
-            json.dumps(data, ensure_ascii=False) if data is not None else None,
+            _serialize_value(data),
             confidence,
-            evidence
+            _serialize_value(evidence)
         ))
 
         conn.commit()
@@ -166,7 +189,7 @@ def save_relationship(
             target_entity_id,
             relation_type,
             confidence,
-            evidence
+            _serialize_value(evidence)
         ))
 
         conn.commit()
@@ -259,23 +282,15 @@ def get_observations(entity_id):
         observations = []
 
         for row in rows:
-            data = None
-
-            if row[5]:
-                try:
-                    data = json.loads(row[5])
-                except (TypeError, json.JSONDecodeError):
-                    data = row[5]
-
             observations.append({
                 "id": row[0],
                 "entity_id": row[1],
                 "scanner": row[2],
                 "source": row[3],
                 "status": row[4],
-                "data": data,
+                "data": _deserialize_value(row[5]),
                 "confidence": row[6],
-                "evidence": row[7],
+                "evidence": _deserialize_value(row[7]),
                 "timestamp": row[8]
             })
 
@@ -368,7 +383,7 @@ def get_relationships(entity_id, direction="both"):
                     "target_entity_id": row[2],
                     "relation_type": row[3],
                     "confidence": row[4],
-                    "evidence": row[5],
+                    "evidence": _deserialize_value(row[5]),
                     "timestamp": row[6],
                     "source": {
                         "id": row[1],
@@ -388,7 +403,7 @@ def get_relationships(entity_id, direction="both"):
                     "target_entity_id": row[2],
                     "relation_type": row[3],
                     "confidence": row[4],
-                    "evidence": row[5],
+                    "evidence": _deserialize_value(row[5]),
                     "timestamp": row[6],
                     "entity": {
                         "id": row[2] if direction == "outgoing" else row[1],
@@ -500,4 +515,4 @@ def get_database_stats():
         "observations": observations,
         "relationships": relationships,
         "type_distribution": type_distribution
-            }
+    }
