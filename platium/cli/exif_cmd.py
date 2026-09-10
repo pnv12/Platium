@@ -59,7 +59,7 @@ def run(args):
             )
         else:
             ui.print_result(
-                result,
+                result.to_dict(),
                 "exif"
             )
 
