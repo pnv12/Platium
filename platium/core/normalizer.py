@@ -7,19 +7,21 @@ import re
 import json
 from datetime import datetime
 from typing import Dict, Any, Optional, List
+
 from platium.core.result import ScanResult, ScanStatus
 from platium.core.paths import DB_PATH
-from platium.intelligence.aggregator import (
+from platium.storage.database import (
     _get_or_create_entity,
     save_observation,
     save_relationship
 )
 
+
 class Normalizer:
     """
     Нормалізує ScanResult у набір сутностей, спостережень та зв'язків.
     """
-    
+
     @staticmethod
     def normalize(result: ScanResult) -> Dict[str, Any]:
         """
@@ -31,16 +33,16 @@ class Normalizer:
 
         # Визначаємо тип сутності
         entity_type = Normalizer._infer_entity_type(result.scanner, result.target)
-        
+
         # Створюємо або отримуємо сутність
         entity_id = _get_or_create_entity(entity_type, result.target)
-        
+
         # Нормалізуємо спостереження
         observations = Normalizer._normalize_observations(result, entity_id)
-        
+
         # Нормалізуємо зв'язки
         relationships = Normalizer._normalize_relationships(result, entity_id)
-        
+
         # Додаткові метадані
         metadata = {
             "normalized_at": datetime.now().isoformat(),
@@ -50,7 +52,7 @@ class Normalizer:
             "evidence": result.evidence,
             "error": result.error
         }
-        
+
         return {
             "entity_id": entity_id,
             "entity_type": entity_type,
@@ -81,11 +83,11 @@ class Normalizer:
     def _normalize_observations(result: ScanResult, entity_id: int) -> List[Dict]:
         """Нормалізує спостереження з результату."""
         observations = []
-        
+
         for source, source_data in result.sources.items():
             status_str = source_data.get("status", "unknown")
             confidence = source_data.get("confidence", result.confidence)
-            
+
             observation = {
                 "entity_id": entity_id,
                 "scanner": result.scanner,
@@ -96,7 +98,7 @@ class Normalizer:
                 "evidence": source_data.get("evidence") or result.evidence
             }
             observations.append(observation)
-            
+
             # Зберігаємо в базу даних
             save_observation(
                 entity_id=entity_id,
@@ -107,18 +109,18 @@ class Normalizer:
                 confidence=confidence,
                 evidence=observation["evidence"]
             )
-        
+
         return observations
 
     @staticmethod
     def _normalize_relationships(result: ScanResult, entity_id: int) -> List[Dict]:
         """Нормалізує зв'язки з результату."""
         relationships = []
-        
+
         # Якщо є дані, шукаємо зв'язки
         if result.data:
             data = result.data
-            
+
             # Для email сканера
             if result.scanner == "email" and "hibp" in data:
                 breaches = data.get("hibp", [])
@@ -139,7 +141,7 @@ class Normalizer:
                             "confidence": 0.9,
                             "evidence": f"Found in {breach}"
                         })
-            
+
             # Для username сканера
             if result.scanner == "username":
                 for platform, info in data.items():
@@ -159,7 +161,7 @@ class Normalizer:
                             "confidence": 0.9,
                             "evidence": info.get("url", "")
                         })
-            
+
             # Для phone сканера
             if result.scanner == "phone":
                 phone_data = data.get("data", {})
@@ -180,6 +182,7 @@ class Normalizer:
                         "confidence": 0.9,
                         "evidence": f"Phone registered in {country}"
                     })
+
                 if phone_data.get("operator"):
                     operator = phone_data["operator"]
                     operator_entity_id = _get_or_create_entity("operator", operator)
@@ -197,7 +200,7 @@ class Normalizer:
                         "confidence": 0.9,
                         "evidence": f"Phone uses {operator}"
                     })
-            
+
             # Для ip сканера
             if result.scanner == "ip":
                 location = data.get("location", {})
@@ -218,15 +221,17 @@ class Normalizer:
                         "confidence": 0.85,
                         "evidence": f"IP located in {country}"
                     })
-            
+
             # Для exif сканера
             if result.scanner == "exif":
                 # Якщо є GPS координати, створюємо гео-сутність
                 if "GPSInfo" in data:
                     gps_data = data["GPSInfo"]
+
                     # Спрощена обробка GPS
                     lat = gps_data.get("GPSLatitude")
                     lon = gps_data.get("GPSLongitude")
+
                     if lat and lon:
                         location_str = f"{lat},{lon}"
                         location_entity_id = _get_or_create_entity("location", location_str)
@@ -244,7 +249,7 @@ class Normalizer:
                             "confidence": 0.9,
                             "evidence": f"GPS coordinates: {location_str}"
                         })
-        
+
         return relationships
 
 
