@@ -1,4 +1,3 @@
-import json
 import sys
 
 from platium.core.validators import validate_ip
@@ -68,7 +67,7 @@ def run(args):
             )
         else:
             ui.print_result(
-                result,
+                result.to_dict(),
                 "ip"
             )
 
