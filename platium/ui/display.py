@@ -1,17 +1,28 @@
 """
 UI Module — професійне оформлення CLI для Platium.
-Підтримує теми, таблиці, прогрес-бари, спінери та кольоровий вивід.
+
+Єдиний шар виводу для CLI:
+- кольори та форматування;
+- заголовки та секції;
+- статуси;
+- таблиці;
+- progress bar;
+- spinner;
+- результати сканування;
+- сумісний legacy API для існуючих CLI-модулів.
 """
 
-import os
+import json
+import shutil
 import sys
 import time
-import shutil
-import json
-from typing import List, Dict, Any, Optional, Union
-from datetime import datetime
+from typing import Any, Dict, List, Optional, Union
 
-# Константи кольорів (ANSI)
+
+# ---------------------------------------------------------------------------
+# ANSI COLORS
+# ---------------------------------------------------------------------------
+
 COLORS = {
     "reset": "\033[0m",
     "bold": "\033[1m",
@@ -30,7 +41,7 @@ COLORS = {
     "bg_blue": "\033[44m",
 }
 
-# Статуси з кольорами
+
 STATUS_COLORS = {
     "success": COLORS["green"],
     "found": COLORS["green"],
@@ -47,52 +58,172 @@ STATUS_COLORS = {
     "unknown": COLORS["dim"],
 }
 
+
+# ---------------------------------------------------------------------------
+# COMPATIBILITY COLOR CLASS
+# ---------------------------------------------------------------------------
+
+class Color:
+    """Сумісний API кольорів для існуючих CLI-модулів."""
+
+    RESET = COLORS["reset"]
+    BOLD = COLORS["bold"]
+    DIM = COLORS["dim"]
+
+    RED = COLORS["red"]
+    GREEN = COLORS["green"]
+    YELLOW = COLORS["yellow"]
+    BLUE = COLORS["blue"]
+    MAGENTA = COLORS["magenta"]
+    CYAN = COLORS["cyan"]
+    WHITE = COLORS["white"]
+    BLACK = COLORS["black"]
+
+    BG_RED = COLORS["bg_red"]
+    BG_GREEN = COLORS["bg_green"]
+    BG_YELLOW = COLORS["bg_yellow"]
+    BG_BLUE = COLORS["bg_blue"]
+
+
+# ---------------------------------------------------------------------------
+# LOW-LEVEL HELPERS
+# ---------------------------------------------------------------------------
+
+def colorize(text: Any, color: str) -> str:
+    """
+    Додає ANSI-колір до тексту, якщо stdout є інтерактивним терміналом.
+    """
+    text = str(text)
+
+    if not sys.stdout.isatty():
+        return text
+
+    return f"{color}{text}{COLORS['reset']}"
+
+
+def _terminal_width(default: int = 80) -> int:
+    """Повертає поточну ширину терміналу."""
+    if not sys.stdout.isatty():
+        return default
+
+    try:
+        return shutil.get_terminal_size().columns
+    except OSError:
+        return default
+
+
+# ---------------------------------------------------------------------------
+# MAIN UI CLASS
+# ---------------------------------------------------------------------------
+
 class UI:
     """
-    Головний клас для роботи з інтерфейсом.
-    Автоматично визначає ширину терміналу та підтримує теми.
+    Головний клас CLI-інтерфейсу Platium.
     """
+
     def __init__(self, theme: str = "dark", verbose: bool = False):
         self.theme = theme
         self.verbose = verbose
-        self.width = shutil.get_terminal_size().columns if sys.stdout.isatty() else 80
+        self.width = _terminal_width()
         self.colors = COLORS
         self.status_colors = STATUS_COLORS
 
     def _colorize(self, text: str, color: str) -> str:
-        """Додає ANSI-кольори до тексту, якщо термінал підтримує."""
-        if not sys.stdout.isatty():
-            return text
-        return f"{color}{text}{COLORS['reset']}"
+        """Додає ANSI-колір до тексту."""
+        return colorize(text, color)
 
     def _truncate(self, text: str, max_len: int) -> str:
-        """Обрізає текст до вказаної довжини."""
+        """Обрізає текст до заданої довжини."""
+        text = str(text)
+
+        if max_len <= 0:
+            return ""
+
         if len(text) <= max_len:
             return text
-        return text[:max_len-3] + "..."
 
-    # ---- ДРУК ЗАГОЛОВКІВ ТА СЕКЦІЙ ----
-    def header(self, text: str, char: str = "=", color: str = "cyan") -> None:
-        """Друкує заголовок з рамкою."""
+        if max_len <= 3:
+            return text[:max_len]
+
+        return text[:max_len - 3] + "..."
+
+    def refresh_width(self) -> None:
+        """Оновлює ширину терміналу."""
+        self.width = _terminal_width()
+
+    # -----------------------------------------------------------------------
+    # HEADERS / SECTIONS
+    # -----------------------------------------------------------------------
+
+    def header(
+        self,
+        text: str,
+        char: str = "=",
+        color: str = "cyan"
+    ) -> None:
+        """Друкує великий заголовок."""
+        self.refresh_width()
+
         border = char * self.width
-        print(self._colorize(border, color))
-        print(self._colorize(f" {text} ".center(self.width), color))
-        print(self._colorize(border, color))
 
-    def section(self, text: str, color: str = "blue") -> None:
+        print(self._colorize(border, COLORS.get(color, color)))
+        print(
+            self._colorize(
+                f" {text} ".center(self.width),
+                COLORS.get(color, color)
+            )
+        )
+        print(self._colorize(border, COLORS.get(color, color)))
+
+    def section(
+        self,
+        text: str,
+        color: str = "blue"
+    ) -> None:
         """Друкує назву секції."""
-        print(self._colorize(f"\n▶ {text}", color))
+        self.refresh_width()
 
-    def subsection(self, text: str, color: str = "cyan") -> None:
-        """Друкує підсекцію."""
-        print(self._colorize(f"  ▸ {text}", color))
+        print(
+            self._colorize(
+                f"\n▶ {text}",
+                COLORS.get(color, color)
+            )
+        )
 
-    # ---- ДРУК СТАТУСІВ ----
-    def status(self, message: str, status: str = "info") -> None:
+    def subsection(
+        self,
+        text: str,
+        color: str = "cyan"
+    ) -> None:
+        """Друкує назву підсекції."""
+        print(
+            self._colorize(
+                f"  ▸ {text}",
+                COLORS.get(color, color)
+            )
+        )
+
+    # -----------------------------------------------------------------------
+    # STATUS
+    # -----------------------------------------------------------------------
+
+    def status(
+        self,
+        message: str,
+        status: str = "info"
+    ) -> None:
         """Друкує повідомлення зі статусом."""
-        color = self.status_colors.get(status, COLORS["reset"])
+        color = self.status_colors.get(
+            status,
+            COLORS["reset"]
+        )
+
         status_label = status.upper()
-        print(f"{self._colorize(f'[{status_label}]', color)} {message}")
+
+        print(
+            f"{self._colorize(f'[{status_label}]', color)} "
+            f"{message}"
+        )
 
     def success(self, message: str) -> None:
         self.status(message, "success")
@@ -106,153 +237,517 @@ class UI:
     def info(self, message: str) -> None:
         self.status(message, "info")
 
-    # ---- ДРУК ТАБЛИЦЬ ----
-    def table(self, headers: List[str], rows: List[List[Union[str, int, float, None]]]) -> None:
+    # -----------------------------------------------------------------------
+    # TABLE
+    # -----------------------------------------------------------------------
+
+    def table(
+        self,
+        headers: List[str],
+        rows: List[List[Union[str, int, float, None]]]
+    ) -> None:
         """
-        Друкує таблицю з вирівнюванням.
-        Перший рядок — заголовки, наступні — дані.
+        Друкує таблицю з автоматичним вирівнюванням.
         """
+        if not headers:
+            self.info("No columns to display")
+            return
+
         if not rows:
             self.info("No data to display")
             return
 
-        # Перетворюємо всі значення на рядки
-        str_rows = [[str(cell) if cell is not None else "" for cell in row] for row in rows]
-        str_headers = [str(h) for h in headers]
+        str_headers = [str(header) for header in headers]
 
-        # Обчислюємо ширину колонок
-        col_widths = [len(h) for h in str_headers]
+        str_rows = [
+            [
+                str(cell) if cell is not None else ""
+                for cell in row
+            ]
+            for row in rows
+        ]
+
+        column_count = len(str_headers)
+
+        normalized_rows = []
+
         for row in str_rows:
-            for i, cell in enumerate(row):
-                if i < len(col_widths):
-                    col_widths[i] = max(col_widths[i], len(cell))
+            normalized_rows.append(
+                row[:column_count]
+                + [""] * max(0, column_count - len(row))
+            )
 
-        # Додаємо відступи (1 пробіл з кожного боку)
-        col_widths = [w + 2 for w in col_widths]
+        col_widths = [
+            len(header)
+            for header in str_headers
+        ]
 
-        # Перевіряємо, чи вміщується таблиця в термінал
-        total_width = sum(col_widths) + len(col_widths) + 1
+        for row in normalized_rows:
+            for index, cell in enumerate(row):
+                col_widths[index] = max(
+                    col_widths[index],
+                    len(cell)
+                )
+
+        col_widths = [
+            width + 2
+            for width in col_widths
+        ]
+
+        total_width = (
+            sum(col_widths)
+            + column_count
+            + 1
+        )
+
         if total_width > self.width:
-            # Зменшуємо ширину колонок пропорційно
-            ratio = (self.width - len(col_widths) - 1) / sum(col_widths)
-            for i in range(len(col_widths)):
-                col_widths[i] = max(3, int(col_widths[i] * ratio))
+            available_width = (
+                self.width
+                - column_count
+                - 1
+            )
 
-        # Формуємо рядок розділювача
-        sep = "+" + "+".join("-" * w for w in col_widths) + "+"
+            if available_width > column_count * 3:
+                ratio = available_width / sum(col_widths)
 
-        # Друкуємо заголовки
-        print(sep)
+                col_widths = [
+                    max(
+                        3,
+                        int(width * ratio)
+                    )
+                    for width in col_widths
+                ]
+
+        separator = (
+            "+"
+            + "+".join(
+                "-" * width
+                for width in col_widths
+            )
+            + "+"
+        )
+
+        print(separator)
+
         header_cells = []
-        for i, h in enumerate(str_headers):
-            header_cells.append(f" {h.ljust(col_widths[i]-1)}")
-        print("|" + "|".join(header_cells) + "|")
-        print(sep)
 
-        # Друкуємо дані
-        for row in str_rows:
+        for index, header in enumerate(str_headers):
+            cell_width = col_widths[index] - 1
+            display_header = self._truncate(
+                header,
+                cell_width
+            )
+
+            header_cells.append(
+                f" {display_header.ljust(cell_width)}"
+            )
+
+        print(
+            "|"
+            + "|".join(header_cells)
+            + "|"
+        )
+
+        print(separator)
+
+        for row in normalized_rows:
             cells = []
-            for i, cell in enumerate(row):
-                if i < len(col_widths):
-                    display_cell = self._truncate(cell, col_widths[i]-1)
-                    cells.append(f" {display_cell.ljust(col_widths[i]-1)}")
-                else:
-                    break
-            print("|" + "|".join(cells) + "|")
-        print(sep)
 
-    # ---- ПРОГРЕС-БАР ----
-    def progress(self, current: int, total: int, label: str = "", bar_len: int = 30) -> None:
-        """
-        Друкує прогрес-бар.
-        """
-        if total == 0:
+            for index, cell in enumerate(row):
+                cell_width = col_widths[index] - 1
+
+                display_cell = self._truncate(
+                    cell,
+                    cell_width
+                )
+
+                cells.append(
+                    f" {display_cell.ljust(cell_width)}"
+                )
+
+            print(
+                "|"
+                + "|".join(cells)
+                + "|"
+            )
+
+        print(separator)
+
+    # -----------------------------------------------------------------------
+    # PROGRESS BAR
+    # -----------------------------------------------------------------------
+
+    def progress(
+        self,
+        current: int,
+        total: int,
+        label: str = "",
+        bar_len: int = 30
+    ) -> None:
+        """Друкує progress bar."""
+        if total <= 0:
             return
+
+        current = max(0, min(current, total))
+
         percent = current / total
         filled = int(bar_len * percent)
-        bar = "█" * filled + "░" * (bar_len - filled)
-        percent_str = f"{percent*100:.1f}%"
-        output = f"\r{self._colorize(bar, 'green')} {percent_str} {label}".ljust(self.width)
+
+        bar = (
+            "█" * filled
+            + "░" * (bar_len - filled)
+        )
+
+        percent_str = f"{percent * 100:.1f}%"
+
+        output = (
+            f"\r{self._colorize(bar, COLORS['green'])} "
+            f"{percent_str} {label}"
+        )
+
+        if len(output) < self.width:
+            output = output.ljust(self.width)
+
         sys.stdout.write(output)
         sys.stdout.flush()
-        if current == total:
+
+        if current >= total:
             sys.stdout.write("\n")
 
-    # ---- СПІНЕР (ЗАВАНТАЖЕННЯ) ----
-    def spinner(self, message: str = "Loading...", duration: float = 1.0) -> None:
-        """
-        Показує спінер протягом вказаної кількості секунд.
-        """
+    # -----------------------------------------------------------------------
+    # SPINNER
+    # -----------------------------------------------------------------------
+
+    def spinner(
+        self,
+        message: str = "Loading...",
+        duration: float = 1.0
+    ) -> None:
+        """Показує spinner протягом заданого часу."""
+        if duration <= 0:
+            return
+
         if not sys.stdout.isatty():
             time.sleep(duration)
             return
 
-        frames = ["⣾", "⣽", "⣻", "⢿", "⡿", "⣟", "⣯", "⣷"]
+        frames = [
+            "⣾",
+            "⣽",
+            "⣻",
+            "⢿",
+            "⡿",
+            "⣟",
+            "⣯",
+            "⣷",
+        ]
+
         start = time.time()
-        i = 0
+        index = 0
+
         while time.time() - start < duration:
-            frame = frames[i % len(frames)]
-            sys.stdout.write(f"\r{self._colorize(frame, 'cyan')} {message}")
+            frame = frames[index % len(frames)]
+
+            sys.stdout.write(
+                f"\r{self._colorize(frame, COLORS['cyan'])} "
+                f"{message}"
+            )
+
             sys.stdout.flush()
+
             time.sleep(0.1)
-            i += 1
-        sys.stdout.write("\r" + " " * (len(message) + 10) + "\r")
+            index += 1
 
-    # ---- ВИВІД РЕЗУЛЬТАТІВ СКАНЕРА ----
-    def print_result(self, result_data: Dict[str, Any], scan_type: str = "scan") -> None:
-        """
-        Друкує результати сканера у гарному форматі.
-        Очікує словник з ключами: target, status, sources, data, error тощо.
-        """
-        target = result_data.get("target", "N/A")
-        status = result_data.get("status", "unknown")
-        sources = result_data.get("sources", {})
-        data = result_data.get("data", {})
-        error = result_data.get("error")
+        clear_length = len(message) + 10
 
-        self.header(f" {scan_type.upper()} RESULTS ", char="─", color="cyan")
-        self.status(f"Target: {target}", "info")
-        self.status(f"Status: {status}", status)
+        sys.stdout.write(
+            "\r"
+            + " " * clear_length
+            + "\r"
+        )
+
+        sys.stdout.flush()
+
+    # -----------------------------------------------------------------------
+    # SCAN RESULT
+    # -----------------------------------------------------------------------
+
+    def print_result(
+        self,
+        result_data: Dict[str, Any],
+        scan_type: str = "scan"
+    ) -> None:
+        """
+        Форматує результат сканування.
+        """
+        if result_data is None:
+            self.error("No result data")
+            return
+
+        target = result_data.get(
+            "target",
+            "N/A"
+        )
+
+        status = result_data.get(
+            "status",
+            "unknown"
+        )
+
+        sources = result_data.get(
+            "sources",
+            {}
+        )
+
+        data = result_data.get(
+            "data",
+            {}
+        )
+
+        error = result_data.get(
+            "error"
+        )
+
+        if hasattr(status, "value"):
+            status = status.value
+
+        status = str(status)
+
+        self.header(
+            f"{scan_type.upper()} RESULTS",
+            char="─",
+            color="cyan"
+        )
+
+        self.status(
+            f"Target: {target}",
+            "info"
+        )
+
+        self.status(
+            f"Status: {status}",
+            status
+        )
 
         if error:
-            self.error(f"Error: {error}")
+            self.error(
+                f"Error: {error}"
+            )
 
         if sources:
-            self.section("Sources", "blue")
+            self.section(
+                "Sources",
+                "blue"
+            )
+
             for source_name, source_info in sources.items():
-                source_status = source_info.get("status", "unknown")
-                self.status(f"{source_name}: {source_status}", source_status)
+                if isinstance(source_info, dict):
+                    source_status = source_info.get(
+                        "status",
+                        "unknown"
+                    )
+                else:
+                    source_status = "unknown"
+
+                self.status(
+                    f"{source_name}: {source_status}",
+                    str(source_status)
+                )
 
         if data:
-            self.section("Data", "blue")
-            for key, value in data.items():
-                if isinstance(value, dict):
-                    self.subsection(key, "cyan")
-                    for k, v in value.items():
-                        if isinstance(v, (list, dict)):
-                            v = json.dumps(v, indent=2, ensure_ascii=False)
-                        self.info(f"  {k}: {v}")
-                else:
-                    self.info(f"{key}: {value}")
+            self.section(
+                "Data",
+                "blue"
+            )
 
-    # ---- МІНІ-КАРТА СТАТУСУ ----
-    def status_card(self, title: str, status: str, details: Optional[str] = None) -> None:
-        """
-        Друкує міні-картку статусу.
-        """
-        color = self.status_colors.get(status, COLORS["reset"])
+            if isinstance(data, dict):
+                for key, value in data.items():
+                    if isinstance(value, dict):
+                        self.subsection(
+                            str(key),
+                            "cyan"
+                        )
+
+                        for sub_key, sub_value in value.items():
+                            if isinstance(
+                                sub_value,
+                                (list, dict)
+                            ):
+                                sub_value = json.dumps(
+                                    sub_value,
+                                    indent=2,
+                                    ensure_ascii=False
+                                )
+
+                            self.info(
+                                f"  {sub_key}: {sub_value}"
+                            )
+
+                    elif isinstance(value, list):
+                        self.info(
+                            f"{key}: "
+                            f"{json.dumps(value, ensure_ascii=False)}"
+                        )
+
+                    else:
+                        self.info(
+                            f"{key}: {value}"
+                        )
+
+            else:
+                self.info(str(data))
+
+    # -----------------------------------------------------------------------
+    # STATUS CARD
+    # -----------------------------------------------------------------------
+
+    def status_card(
+        self,
+        title: str,
+        status: str,
+        details: Optional[str] = None
+    ) -> None:
+        """Друкує компактну status card."""
+        color = self.status_colors.get(
+            status,
+            COLORS["reset"]
+        )
+
         status_label = status.upper()
-        line = f"{self._colorize(title, 'bold')} [{self._colorize(status_label, color)}]"
+
+        line = (
+            f"{self._colorize(title, COLORS['bold'])} "
+            f"[{self._colorize(status_label, color)}]"
+        )
+
         if details:
             line += f" {details}"
+
         print(line)
 
-# Глобальний екземпляр для зручності
-_ui = None
 
-def get_ui(theme: str = "dark", verbose: bool = False) -> UI:
-    """Повертає глобальний екземпляр UI."""
+# ---------------------------------------------------------------------------
+# GLOBAL UI INSTANCE
+# ---------------------------------------------------------------------------
+
+_ui: Optional[UI] = None
+
+
+def get_ui(
+    theme: str = "dark",
+    verbose: bool = False
+) -> UI:
+    """
+    Повертає глобальний екземпляр UI.
+    """
     global _ui
+
     if _ui is None:
-        _ui = UI(theme=theme, verbose=verbose)
+        _ui = UI(
+            theme=theme,
+            verbose=verbose
+        )
+
     return _ui
+
+
+# ---------------------------------------------------------------------------
+# LEGACY / CLI COMPATIBILITY API
+# ---------------------------------------------------------------------------
+
+def display_banner() -> None:
+    """
+    Виводить головний банер Platium.
+    """
+    ui = get_ui()
+
+    width = min(ui.width, 80)
+
+    lines = [
+        "PLATIUM",
+        "OSINT & INTELLIGENCE FRAMEWORK",
+    ]
+
+    border = "═" * width
+
+    print()
+    print(colorize(border, COLORS["cyan"]))
+
+    for line in lines:
+        print(
+            colorize(
+                line.center(width),
+                COLORS["bold"]
+            )
+        )
+
+    print(colorize(border, COLORS["cyan"]))
+    print()
+
+
+def print_header(
+    text: str,
+    color: str = Color.CYAN
+) -> None:
+    """
+    Сумісний заголовок для існуючих CLI-команд.
+    """
+    if color in COLORS:
+        color_value = COLORS[color]
+    else:
+        color_value = color
+
+    print(
+        colorize(
+            f"\n{text}",
+            color_value
+        )
+    )
+
+
+def print_scan_result(
+    result: Any,
+    scan_type: str = "scan"
+) -> None:
+    """
+    Сумісний адаптер для виводу ScanResult або словника.
+    """
+    ui = get_ui()
+
+    if hasattr(result, "to_dict"):
+        result_data = result.to_dict()
+    elif isinstance(result, dict):
+        result_data = result
+    else:
+        result_data = {
+            "target": getattr(
+                result,
+                "target",
+                "N/A"
+            ),
+            "status": getattr(
+                getattr(result, "status", None),
+                "value",
+                getattr(result, "status", "unknown")
+            ),
+            "sources": getattr(
+                result,
+                "sources",
+                {}
+            ),
+            "data": getattr(
+                result,
+                "data",
+                {}
+            ),
+            "error": getattr(
+                result,
+                "error",
+                None
+            ),
+        }
+
+    ui.print_result(
+        result_data,
+        scan_type
+    )
