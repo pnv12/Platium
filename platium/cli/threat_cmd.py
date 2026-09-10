@@ -1,4 +1,3 @@
-import json
 import sys
 
 from platium.core.validators import validate_ip, validate_domain
@@ -47,9 +46,10 @@ def run(args):
     )
 
     try:
-        if validate_ip(args.query):
+        try:
+            validate_ip(args.query)
             target_type = "IP"
-        else:
+        except ValidationError:
             validate_domain(args.query)
             target_type = "domain"
 
@@ -59,24 +59,19 @@ def run(args):
 
         config = load_config()
 
-        results = search(
+        result = search(
             args.query,
-            config,
             getattr(args, "verbose", False)
             or getattr(args, "_verbose", False)
         )
 
         if args.json:
             print(
-                json.dumps(
-                    results,
-                    indent=2,
-                    ensure_ascii=False
-                )
+                result.to_json()
             )
         else:
             ui.print_result(
-                results,
+                result.to_dict(),
                 "threat"
             )
 
@@ -86,11 +81,8 @@ def run(args):
                 "w",
                 encoding="utf-8"
             ) as file:
-                json.dump(
-                    results,
-                    file,
-                    indent=2,
-                    ensure_ascii=False
+                file.write(
+                    result.to_json()
                 )
 
             ui.success(
