@@ -1,122 +1,101 @@
-"""
-Deep OSINT Scanner — комбінований пошук з автовизначенням типу запиту.
-"""
-
-import re
+import sys
 
 from platium.core.config import load_config
-from platium.core.errors import ScannerError, ValidationError
-from platium.core.result import ScanResult, ScanStatus
-from platium.scanners.username.scanner import search as username_search
-from platium.scanners.email.scanner import search as email_search
-from platium.scanners.phone.scanner import search as phone_search
-from platium.scanners.ip.scanner import search as ip_search
+from platium.core.errors import ValidationError, ScannerError
+from platium.ui.display import get_ui
+from platium.scanners.deep.scanner import deep_search
 
 
-def detect_type(query):
-    """Автоматично визначає тип запиту."""
-    if not query or len(query) < 2:
-        return "unknown"
+def register(subparsers):
+    parser = subparsers.add_parser(
+        "deep",
+        help="Deep OSINT search (auto-detect type)"
+    )
 
-    if "@" in query:
-        return "email"
+    parser.add_argument(
+        "query",
+        help="Email, phone, IP, or username"
+    )
 
-    if re.match(r"^\+?\d{10,15}$", query.replace(" ", "")):
-        return "phone"
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="Verbose output"
+    )
 
-    if re.match(r"^(\d{1,3}\.){3}\d{1,3}$", query):
-        return "ip"
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output as JSON"
+    )
 
-    if re.match(r"^[a-zA-Z0-9_.-]+$", query):
-        return "username"
+    parser.add_argument(
+        "-o",
+        "--output",
+        help="Save report to file"
+    )
 
-    return "unknown"
+    parser.set_defaults(func=run)
 
 
-def deep_search(query, config=None, verbose=False) -> ScanResult:
-    """
-    Глибокий OSINT-пошук: визначає тип і запускає релевантний сканер.
-
-    Повертає єдиний ScanResult для сумісності з іншими сканерами Platium.
-    """
-    if config is None:
-        config = load_config()
-
-    detected = detect_type(query)
-
-    if detected == "unknown":
-        return ScanResult.error_result(
-            target=query,
-            scanner="deep",
-            error="Unknown query type"
-        )
-
-    scanner_map = {
-        "username": username_search,
-        "email": email_search,
-        "phone": phone_search,
-        "ip": ip_search,
-    }
-
-    scanner = scanner_map.get(detected)
-
-    if scanner is None:
-        return ScanResult.error_result(
-            target=query,
-            scanner="deep",
-            error="Unsupported type"
-        )
+def run(args):
+    ui = get_ui(
+        verbose=getattr(args, "_verbose", False)
+    )
 
     try:
-        scan_result = scanner(
-            query,
+        ui.info(
+            f"Starting deep search: {args.query}"
+        )
+
+        config = load_config()
+
+        result = deep_search(
+            args.query,
             config,
-            verbose
+            getattr(args, "verbose", False)
+            or getattr(args, "_verbose", False)
         )
 
-        result_data = {
-            "detected_type": detected,
-            "results": {
-                detected: scan_result.to_dict()
-            }
-        }
-
-        if scan_result.status == ScanStatus.SUCCESS:
-            status = ScanStatus.SUCCESS
-        elif scan_result.status in (
-            ScanStatus.ERROR,
-            ScanStatus.PARTIAL
-        ):
-            status = ScanStatus.PARTIAL
+        if args.json:
+            print(
+                result.to_json()
+            )
         else:
-            status = ScanStatus.NOT_FOUND
+            ui.print_result(
+                result.to_dict(),
+                "deep"
+            )
 
-        return ScanResult(
-            target=query,
-            scanner="deep",
-            status=status,
-            data=result_data,
-            sources={
-                detected: {
-                    "status": scan_result.status.value,
-                    "confidence": scan_result.confidence
-                }
-            },
-            error=scan_result.error,
-            confidence=scan_result.confidence,
-            evidence=scan_result.evidence
-        )
+        if args.output:
+            with open(
+                args.output,
+                "w",
+                encoding="utf-8"
+            ) as file:
+                file.write(
+                    result.to_json()
+                )
 
-    except (ValidationError, ScannerError) as exc:
-        return ScanResult.error_result(
-            target=query,
-            scanner="deep",
-            error=str(exc)
+            ui.success(
+                f"Report saved to {args.output}"
+            )
+
+    except ValidationError as exc:
+        ui.error(
+            f"Invalid input: {exc}"
         )
+        sys.exit(1)
+
+    except ScannerError as exc:
+        ui.error(
+            f"Scanner error: {exc}"
+        )
+        sys.exit(1)
 
     except Exception as exc:
-        return ScanResult.error_result(
-            target=query,
-            scanner="deep",
-            error=str(exc)
+        ui.error(
+            f"Unexpected error: {exc}"
         )
+        sys.exit(1)
