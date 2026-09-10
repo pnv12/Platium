@@ -73,10 +73,11 @@ def main():
     darknet_cmd.register(subparsers)
     deep_cmd.register(subparsers)
 
-    # --- КОМАНДИ АГРЕГАТОРА ---
+    # --- КОМАНДИ INTELLIGENCE / AGGREGATION ---
     aggregate_cmd.register(subparsers)
     aggregate_cmd.register_analyze(subparsers)
     aggregate_cmd.register_connections(subparsers)
+    aggregate_cmd.register_entity(subparsers)
     aggregate_cmd.register_correlate(subparsers)
 
     # --- ЗВІТИ ---
