@@ -35,6 +35,7 @@ class TestImageScanner(unittest.TestCase):
 
             self.assertIn("file", result.data)
             self.assertIn("image", result.data)
+            self.assertIn("metadata", result.data)
             self.assertIn("fingerprint", result.data)
 
             self.assertEqual(result.data["image"]["format"], "PNG")
@@ -42,7 +43,17 @@ class TestImageScanner(unittest.TestCase):
             self.assertEqual(result.data["image"]["height"], 16)
             self.assertEqual(result.data["image"]["mode"], "RGB")
 
+            exif = result.data["metadata"]["exif"]
+
+            self.assertIn("available", exif)
+            self.assertIn("fields", exif)
+            self.assertIn("gps_present", exif)
+            self.assertFalse(exif["available"])
+            self.assertEqual(exif["fields"], {})
+            self.assertFalse(exif["gps_present"])
+
             fingerprint = result.data["fingerprint"]
+
             self.assertEqual(len(fingerprint["sha256"]), 64)
             self.assertEqual(len(fingerprint["average_hash"]), 64)
             self.assertTrue(all(
@@ -51,8 +62,11 @@ class TestImageScanner(unittest.TestCase):
             ))
 
             self.assertIn("image", result.sources)
+            self.assertIn("metadata", result.sources)
             self.assertIn("hash", result.sources)
+
             self.assertIn("Image file validated", result.evidence)
+            self.assertIn("EXIF metadata analyzed", result.evidence)
 
 
 if __name__ == "__main__":
