@@ -27,7 +27,10 @@ def _average_hash(image):
     pixels = list(grayscale.getdata())
     average = sum(pixels) / len(pixels)
 
-    return "".join("1" if pixel >= average else "0" for pixel in pixels)
+    return "".join(
+        "1" if pixel >= average else "0"
+        for pixel in pixels
+    )
 
 
 def search(image_path, verbose=False) -> ScanResult:
@@ -82,7 +85,9 @@ def search(image_path, verbose=False) -> ScanResult:
                 "width": width,
                 "height": height,
                 "mode": mode,
-                "aspect_ratio": round(width / height, 6) if height else None
+                "aspect_ratio": round(width / height, 6)
+                if height
+                else None
             },
             "metadata": {
                 "exif": exif
@@ -100,12 +105,16 @@ def search(image_path, verbose=False) -> ScanResult:
             },
             "metadata": {
                 "status": "success",
+                "data": exif,
                 "exif_available": exif["available"],
                 "gps_present": exif["gps_present"]
             },
             "hash": {
                 "status": "success",
-                "algorithms": ["sha256", "average_hash"]
+                "algorithms": [
+                    "sha256",
+                    "average_hash"
+                ]
             }
         }
 
