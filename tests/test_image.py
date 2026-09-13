@@ -323,6 +323,109 @@ class TestImageScanner(unittest.TestCase):
             finally:
                 database.DB_PATH = original_db_path
 
+    def test_image_gps_normalization_creates_location_relationship(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            database_path = os.path.join(
+                temp_dir,
+                "test-platium-gps.db"
+            )
+
+            original_db_path = database.DB_PATH
+            database.DB_PATH = database_path
+
+            try:
+                result = search(
+                    os.path.join(
+                        temp_dir,
+                        "gps-image.jpg"
+                    )
+                )
+
+                result.data = {
+                    "file": {
+                        "path": "gps-image.jpg",
+                        "name": "gps-image.jpg",
+                        "size": 12345
+                    },
+                    "image": {
+                        "format": "JPEG",
+                        "width": 1920,
+                        "height": 1080,
+                        "mode": "RGB",
+                        "aspect_ratio": 1.777778
+                    },
+                    "metadata": {
+                        "exif": {
+                            "available": True,
+                            "fields": {
+                                "Make": "Test Camera",
+                                "Model": "Test Model"
+                            },
+                            "gps_present": True,
+                            "gps": {
+                                "present": True,
+                                "latitude": 50.450359,
+                                "longitude": 30.524502,
+                                "latitude_ref": "N",
+                                "longitude_ref": "E"
+                            }
+                        }
+                    },
+                    "fingerprint": {
+                        "sha256": "a" * 64,
+                        "average_hash": "0" * 64
+                    }
+                }
+
+                normalized = normalize_result(result)
+
+                entity_id = normalized["entity_id"]
+
+                relationships = database.get_relationships(
+                    entity_id,
+                    direction="outgoing"
+                )
+
+                photo_location_relationships = [
+                    relationship
+                    for relationship in relationships
+                    if relationship["relation_type"]
+                    == "photo_taken_at"
+                ]
+
+                self.assertEqual(
+                    len(photo_location_relationships),
+                    1
+                )
+
+                location_relationship = (
+                    photo_location_relationships[0]
+                )
+
+                self.assertEqual(
+                    location_relationship["confidence"],
+                    0.98
+                )
+
+                location_entity = database.get_entity_by_id(
+                    location_relationship["target_entity_id"]
+                )
+
+                self.assertIsNotNone(
+                    location_entity
+                )
+                self.assertEqual(
+                    location_entity["entity_type"],
+                    "location"
+                )
+                self.assertEqual(
+                    location_entity["value"],
+                    "50.45035900,30.52450200"
+                )
+
+            finally:
+                database.DB_PATH = original_db_path
+
 
 if __name__ == "__main__":
     unittest.main()
