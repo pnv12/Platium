@@ -5,6 +5,7 @@ import unittest
 from PIL import Image
 
 from platium.core.normalizer import normalize_result
+from platium.scanners.image.metadata import _convert_gps_coordinate
 from platium.scanners.image.scanner import search
 from platium.storage import database
 
@@ -102,6 +103,11 @@ class TestImageScanner(unittest.TestCase):
                 "gps_present",
                 exif
             )
+            self.assertIn(
+                "gps",
+                exif
+            )
+
             self.assertFalse(
                 exif["available"]
             )
@@ -111,6 +117,18 @@ class TestImageScanner(unittest.TestCase):
             )
             self.assertFalse(
                 exif["gps_present"]
+            )
+
+            gps = exif["gps"]
+
+            self.assertFalse(
+                gps["present"]
+            )
+            self.assertIsNone(
+                gps["latitude"]
+            )
+            self.assertIsNone(
+                gps["longitude"]
             )
 
             fingerprint = result.data["fingerprint"]
@@ -151,6 +169,29 @@ class TestImageScanner(unittest.TestCase):
                 "EXIF metadata analyzed",
                 result.evidence
             )
+
+    def test_gps_coordinate_conversion(self):
+        coordinate = _convert_gps_coordinate(
+            (50, 30, 0)
+        )
+
+        self.assertAlmostEqual(
+            coordinate,
+            50.5
+        )
+
+    def test_gps_coordinate_invalid(self):
+        self.assertIsNone(
+            _convert_gps_coordinate(
+                (50, 30)
+            )
+        )
+
+        self.assertIsNone(
+            _convert_gps_coordinate(
+                None
+            )
+        )
 
     def test_image_normalization_and_storage(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -248,6 +289,10 @@ class TestImageScanner(unittest.TestCase):
                 )
                 self.assertIn(
                     "gps_present",
+                    metadata_observation["data"]
+                )
+                self.assertIn(
+                    "gps",
                     metadata_observation["data"]
                 )
 
