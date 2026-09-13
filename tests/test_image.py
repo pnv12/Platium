@@ -2,7 +2,7 @@ import os
 import tempfile
 import unittest
 
-from PIL import Image
+from PIL import ExifTags, Image
 
 from platium.core.normalizer import normalize_result
 from platium.scanners.image.metadata import _convert_gps_coordinate
@@ -10,18 +10,78 @@ from platium.scanners.image.scanner import search
 from platium.storage import database
 
 
+def _create_gps_test_image(
+    image_path,
+    latitude=50.450359,
+    longitude=30.524502
+):
+    """Create a JPEG image containing real GPS EXIF metadata."""
+
+    def to_dms(value):
+        value = abs(value)
+
+        degrees = int(value)
+        minutes_float = (value - degrees) * 60
+        minutes = int(minutes_float)
+        seconds = round(
+            (minutes_float - minutes) * 60,
+            6
+        )
+
+        return (
+            (degrees, 1),
+            (minutes, 1),
+            (int(round(seconds * 1000000)), 1000000)
+        )
+
+    exif = Image.Exif()
+
+    gps_ifd = {
+        1: "N" if latitude >= 0 else "S",
+        2: to_dms(latitude),
+        3: "E" if longitude >= 0 else "W",
+        4: to_dms(longitude)
+    }
+
+    exif[ExifTags.IFD.GPSInfo] = gps_ifd
+
+    image = Image.new(
+        "RGB",
+        (64, 32),
+        "white"
+    )
+
+    image.save(
+        image_path,
+        format="JPEG",
+        exif=exif.tobytes()
+    )
+
+
 class TestImageScanner(unittest.TestCase):
     def test_missing_file(self):
         result = search("nonexistent-image.jpg")
 
-        self.assertEqual(result.status.value, "error")
-        self.assertIn("File not found", result.error)
+        self.assertEqual(
+            result.status.value,
+            "error"
+        )
+        self.assertIn(
+            "File not found",
+            result.error
+        )
 
     def test_empty_path(self):
         result = search("")
 
-        self.assertEqual(result.status.value, "error")
-        self.assertEqual(result.error, "Image path is required")
+        self.assertEqual(
+            result.status.value,
+            "error"
+        )
+        self.assertEqual(
+            result.error,
+            "Image path is required"
+        )
 
     def test_image_analysis(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -35,6 +95,7 @@ class TestImageScanner(unittest.TestCase):
                 (32, 16),
                 "white"
             )
+
             image.save(
                 image_path,
                 format="PNG"
@@ -209,6 +270,7 @@ class TestImageScanner(unittest.TestCase):
                 (32, 16),
                 "white"
             )
+
             image.save(
                 image_path,
                 format="PNG"
@@ -242,7 +304,9 @@ class TestImageScanner(unittest.TestCase):
                     entity_id
                 )
 
-                self.assertIsNotNone(entity)
+                self.assertIsNotNone(
+                    entity
+                )
                 self.assertEqual(
                     entity["entity_type"],
                     "image"
@@ -323,61 +387,77 @@ class TestImageScanner(unittest.TestCase):
             finally:
                 database.DB_PATH = original_db_path
 
-    def test_image_gps_normalization_creates_location_relationship(self):
+    def test_real_gps_exif_flows_through_scanner_and_normalizer(self):
         with tempfile.TemporaryDirectory() as temp_dir:
+            image_path = os.path.join(
+                temp_dir,
+                "real-gps-image.jpg"
+            )
             database_path = os.path.join(
                 temp_dir,
-                "test-platium-gps.db"
+                "test-platium-real-gps.db"
+            )
+
+            _create_gps_test_image(
+                image_path,
+                latitude=50.450359,
+                longitude=30.524502
             )
 
             original_db_path = database.DB_PATH
             database.DB_PATH = database_path
 
             try:
-                result = search(
-                    os.path.join(
-                        temp_dir,
-                        "gps-image.jpg"
-                    )
+                result = search(image_path)
+
+                self.assertEqual(
+                    result.status.value,
+                    "success"
                 )
 
-                result.data = {
-                    "file": {
-                        "path": "gps-image.jpg",
-                        "name": "gps-image.jpg",
-                        "size": 12345
-                    },
-                    "image": {
-                        "format": "JPEG",
-                        "width": 1920,
-                        "height": 1080,
-                        "mode": "RGB",
-                        "aspect_ratio": 1.777778
-                    },
-                    "metadata": {
-                        "exif": {
-                            "available": True,
-                            "fields": {
-                                "Make": "Test Camera",
-                                "Model": "Test Model"
-                            },
-                            "gps_present": True,
-                            "gps": {
-                                "present": True,
-                                "latitude": 50.450359,
-                                "longitude": 30.524502,
-                                "latitude_ref": "N",
-                                "longitude_ref": "E"
-                            }
-                        }
-                    },
-                    "fingerprint": {
-                        "sha256": "a" * 64,
-                        "average_hash": "0" * 64
-                    }
-                }
+                exif = result.data["metadata"]["exif"]
 
-                normalized = normalize_result(result)
+                self.assertTrue(
+                    exif["available"]
+                )
+                self.assertTrue(
+                    exif["gps_present"]
+                )
+
+                gps = exif["gps"]
+
+                self.assertTrue(
+                    gps["present"]
+                )
+
+                self.assertAlmostEqual(
+                    gps["latitude"],
+                    50.450359,
+                    places=5
+                )
+                self.assertAlmostEqual(
+                    gps["longitude"],
+                    30.524502,
+                    places=5
+                )
+
+                self.assertEqual(
+                    gps["latitude_ref"],
+                    "N"
+                )
+                self.assertEqual(
+                    gps["longitude_ref"],
+                    "E"
+                )
+
+                self.assertIn(
+                    "GPS metadata present",
+                    result.evidence
+                )
+
+                normalized = normalize_result(
+                    result
+                )
 
                 entity_id = normalized["entity_id"]
 
@@ -408,16 +488,20 @@ class TestImageScanner(unittest.TestCase):
                 )
 
                 location_entity = database.get_entity_by_id(
-                    location_relationship["target_entity_id"]
+                    location_relationship[
+                        "target_entity_id"
+                    ]
                 )
 
                 self.assertIsNotNone(
                     location_entity
                 )
+
                 self.assertEqual(
                     location_entity["entity_type"],
                     "location"
                 )
+
                 self.assertEqual(
                     location_entity["value"],
                     "50.45035900,30.52450200"
