@@ -15,6 +15,7 @@ from platium.cli import (
     phone_cmd,
     ip_cmd,
     exif_cmd,
+    image_cmd,
     social_cmd,
     threat_cmd,
     graph_cmd,
@@ -67,6 +68,7 @@ def main():
     phone_cmd.register(subparsers)
     ip_cmd.register(subparsers)
     exif_cmd.register(subparsers)
+    image_cmd.register(subparsers)
     social_cmd.register(subparsers)
     threat_cmd.register(subparsers)
     graph_cmd.register(subparsers)
