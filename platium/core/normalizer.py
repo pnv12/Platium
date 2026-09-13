@@ -3,13 +3,10 @@ Normalizer — обов'язковий шар для перетворення Sc
 Використовується в усіх сканерах перед збереженням у базу даних.
 """
 
-import re
-import json
 from datetime import datetime
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, List
 
-from platium.core.result import ScanResult, ScanStatus
-from platium.core.paths import DB_PATH
+from platium.core.result import ScanResult
 from platium.storage.database import (
     _get_or_create_entity,
     save_observation,
@@ -31,31 +28,26 @@ class Normalizer:
         if not result or not result.target:
             return {"error": "Invalid result"}
 
-        # Визначаємо тип сутності
         entity_type = Normalizer._infer_entity_type(
             result.scanner,
             result.target
         )
 
-        # Створюємо або отримуємо сутність
         entity_id = _get_or_create_entity(
             entity_type,
             result.target
         )
 
-        # Нормалізуємо спостереження
         observations = Normalizer._normalize_observations(
             result,
             entity_id
         )
 
-        # Нормалізуємо зв'язки
         relationships = Normalizer._normalize_relationships(
             result,
             entity_id
         )
 
-        # Додаткові метадані
         metadata = {
             "normalized_at": datetime.now().isoformat(),
             "scanner": result.scanner,
@@ -90,6 +82,7 @@ class Normalizer:
             "darknet": "domain",
             "deep": "auto"
         }
+
         return mapping.get(scanner, "unknown")
 
     @staticmethod
@@ -105,6 +98,7 @@ class Normalizer:
                 "status",
                 "unknown"
             )
+
             confidence = source_data.get(
                 "confidence",
                 result.confidence
@@ -121,9 +115,9 @@ class Normalizer:
                     "evidence"
                 ) or result.evidence
             }
+
             observations.append(observation)
 
-            # Зберігаємо в базу даних
             save_observation(
                 entity_id=entity_id,
                 scanner=result.scanner,
@@ -144,250 +138,330 @@ class Normalizer:
         """Нормалізує зв'язки з результату."""
         relationships = []
 
-        # Якщо є дані, шукаємо зв'язки
-        if result.data:
-            data = result.data
+        if not result.data:
+            return relationships
 
-            # Для email сканера
-            if result.scanner == "email" and "hibp" in data:
-                breaches = data.get("hibp", [])
+        data = result.data
 
-                if isinstance(breaches, list):
-                    for breach in breaches:
-                        breach_entity_id = _get_or_create_entity(
-                            "breach",
-                            breach
+        if result.scanner == "email" and "hibp" in data:
+            breaches = data.get("hibp", [])
+
+            if isinstance(breaches, list):
+                for breach in breaches:
+                    breach_entity_id = _get_or_create_entity(
+                        "breach",
+                        breach
+                    )
+
+                    evidence = f"Found in {breach}"
+
+                    save_relationship(
+                        source_entity_id=entity_id,
+                        target_entity_id=breach_entity_id,
+                        relation_type="appears_in_breach",
+                        confidence=0.9,
+                        evidence=evidence
+                    )
+
+                    relationships.append({
+                        "source": entity_id,
+                        "target": breach_entity_id,
+                        "relation": "appears_in_breach",
+                        "confidence": 0.9,
+                        "evidence": evidence
+                    })
+
+        if result.scanner == "username":
+            for platform, info in data.items():
+                if (
+                    isinstance(info, dict)
+                    and info.get("status") == "found"
+                ):
+                    platform_entity_id = _get_or_create_entity(
+                        "platform",
+                        platform
+                    )
+
+                    evidence = info.get("url", "")
+
+                    save_relationship(
+                        source_entity_id=entity_id,
+                        target_entity_id=platform_entity_id,
+                        relation_type="has_profile_on",
+                        confidence=0.9,
+                        evidence=evidence
+                    )
+
+                    relationships.append({
+                        "source": entity_id,
+                        "target": platform_entity_id,
+                        "relation": "has_profile_on",
+                        "confidence": 0.9,
+                        "evidence": evidence
+                    })
+
+        if result.scanner == "phone":
+            phone_data = data.get("data", {})
+
+            if phone_data.get("country"):
+                country = phone_data["country"]
+
+                country_entity_id = _get_or_create_entity(
+                    "country",
+                    country
+                )
+
+                evidence = f"Phone registered in {country}"
+
+                save_relationship(
+                    source_entity_id=entity_id,
+                    target_entity_id=country_entity_id,
+                    relation_type="located_in",
+                    confidence=0.9,
+                    evidence=evidence
+                )
+
+                relationships.append({
+                    "source": entity_id,
+                    "target": country_entity_id,
+                    "relation": "located_in",
+                    "confidence": 0.9,
+                    "evidence": evidence
+                })
+
+            if phone_data.get("operator"):
+                operator = phone_data["operator"]
+
+                operator_entity_id = _get_or_create_entity(
+                    "operator",
+                    operator
+                )
+
+                evidence = f"Phone uses {operator}"
+
+                save_relationship(
+                    source_entity_id=entity_id,
+                    target_entity_id=operator_entity_id,
+                    relation_type="uses_operator",
+                    confidence=0.9,
+                    evidence=evidence
+                )
+
+                relationships.append({
+                    "source": entity_id,
+                    "target": operator_entity_id,
+                    "relation": "uses_operator",
+                    "confidence": 0.9,
+                    "evidence": evidence
+                })
+
+        if result.scanner == "ip":
+            location = data.get("location", {})
+
+            if location.get("country"):
+                country = location["country"]
+
+                country_entity_id = _get_or_create_entity(
+                    "country",
+                    country
+                )
+
+                evidence = f"IP located in {country}"
+
+                save_relationship(
+                    source_entity_id=entity_id,
+                    target_entity_id=country_entity_id,
+                    relation_type="located_in",
+                    confidence=0.85,
+                    evidence=evidence
+                )
+
+                relationships.append({
+                    "source": entity_id,
+                    "target": country_entity_id,
+                    "relation": "located_in",
+                    "confidence": 0.85,
+                    "evidence": evidence
+                })
+
+        if result.scanner == "exif":
+            if "GPSInfo" in data:
+                gps_data = data["GPSInfo"]
+
+                if isinstance(gps_data, dict):
+                    lat = gps_data.get("GPSLatitude")
+                    lon = gps_data.get("GPSLongitude")
+
+                    if lat and lon:
+                        location_str = f"{lat},{lon}"
+
+                        location_entity_id = _get_or_create_entity(
+                            "location",
+                            location_str
+                        )
+
+                        evidence = (
+                            f"GPS coordinates: {location_str}"
                         )
 
                         save_relationship(
                             source_entity_id=entity_id,
-                            target_entity_id=breach_entity_id,
-                            relation_type="appears_in_breach",
+                            target_entity_id=location_entity_id,
+                            relation_type="photo_taken_at",
                             confidence=0.9,
-                            evidence=f"Found in {breach}"
+                            evidence=evidence
                         )
 
                         relationships.append({
                             "source": entity_id,
-                            "target": breach_entity_id,
-                            "relation": "appears_in_breach",
+                            "target": location_entity_id,
+                            "relation": "photo_taken_at",
                             "confidence": 0.9,
-                            "evidence": f"Found in {breach}"
+                            "evidence": evidence
                         })
 
-            # Для username сканера
-            if result.scanner == "username":
-                for platform, info in data.items():
-                    if (
-                        isinstance(info, dict)
-                        and info.get("status") == "found"
-                    ):
-                        platform_entity_id = _get_or_create_entity(
-                            "platform",
-                            platform
-                        )
+        if result.scanner == "image":
+            fingerprint_data = data.get(
+                "fingerprint",
+                {}
+            )
 
-                        save_relationship(
-                            source_entity_id=entity_id,
-                            target_entity_id=platform_entity_id,
-                            relation_type="has_profile_on",
-                            confidence=0.9,
-                            evidence=info.get("url", "")
-                        )
+            sha256 = fingerprint_data.get("sha256")
 
-                        relationships.append({
-                            "source": entity_id,
-                            "target": platform_entity_id,
-                            "relation": "has_profile_on",
-                            "confidence": 0.9,
-                            "evidence": info.get("url", "")
-                        })
-
-            # Для phone сканера
-            if result.scanner == "phone":
-                phone_data = data.get("data", {})
-
-                if phone_data.get("country"):
-                    country = phone_data["country"]
-                    country_entity_id = _get_or_create_entity(
-                        "country",
-                        country
-                    )
-
-                    save_relationship(
-                        source_entity_id=entity_id,
-                        target_entity_id=country_entity_id,
-                        relation_type="located_in",
-                        confidence=0.9,
-                        evidence=f"Phone registered in {country}"
-                    )
-
-                    relationships.append({
-                        "source": entity_id,
-                        "target": country_entity_id,
-                        "relation": "located_in",
-                        "confidence": 0.9,
-                        "evidence": f"Phone registered in {country}"
-                    })
-
-                if phone_data.get("operator"):
-                    operator = phone_data["operator"]
-                    operator_entity_id = _get_or_create_entity(
-                        "operator",
-                        operator
-                    )
-
-                    save_relationship(
-                        source_entity_id=entity_id,
-                        target_entity_id=operator_entity_id,
-                        relation_type="uses_operator",
-                        confidence=0.9,
-                        evidence=f"Phone uses {operator}"
-                    )
-
-                    relationships.append({
-                        "source": entity_id,
-                        "target": operator_entity_id,
-                        "relation": "uses_operator",
-                        "confidence": 0.9,
-                        "evidence": f"Phone uses {operator}"
-                    })
-
-            # Для ip сканера
-            if result.scanner == "ip":
-                location = data.get("location", {})
-
-                if location.get("country"):
-                    country = location["country"]
-                    country_entity_id = _get_or_create_entity(
-                        "country",
-                        country
-                    )
-
-                    save_relationship(
-                        source_entity_id=entity_id,
-                        target_entity_id=country_entity_id,
-                        relation_type="located_in",
-                        confidence=0.85,
-                        evidence=f"IP located in {country}"
-                    )
-
-                    relationships.append({
-                        "source": entity_id,
-                        "target": country_entity_id,
-                        "relation": "located_in",
-                        "confidence": 0.85,
-                        "evidence": f"IP located in {country}"
-                    })
-
-            # Для exif сканера
-            if result.scanner == "exif":
-                # Якщо є GPS координати, створюємо гео-сутність
-                if "GPSInfo" in data:
-                    gps_data = data["GPSInfo"]
-
-                    # Спрощена обробка GPS
-                    if isinstance(gps_data, dict):
-                        lat = gps_data.get("GPSLatitude")
-                        lon = gps_data.get("GPSLongitude")
-
-                        if lat and lon:
-                            location_str = f"{lat},{lon}"
-                            location_entity_id = _get_or_create_entity(
-                                "location",
-                                location_str
-                            )
-
-                            save_relationship(
-                                source_entity_id=entity_id,
-                                target_entity_id=location_entity_id,
-                                relation_type="photo_taken_at",
-                                confidence=0.9,
-                                evidence=(
-                                    f"GPS coordinates: "
-                                    f"{location_str}"
-                                )
-                            )
-
-                            relationships.append({
-                                "source": entity_id,
-                                "target": location_entity_id,
-                                "relation": "photo_taken_at",
-                                "confidence": 0.9,
-                                "evidence": (
-                                    f"GPS coordinates: "
-                                    f"{location_str}"
-                                )
-                            })
-
-            # Для Image Intelligence сканера
-            if result.scanner == "image":
-                fingerprint_data = data.get(
-                    "fingerprint",
-                    {}
+            if sha256:
+                hash_entity_id = _get_or_create_entity(
+                    "image_sha256",
+                    sha256
                 )
 
-                # SHA-256 — точний ідентифікатор файлу.
-                # Однаковий SHA-256 означає однаковий файл.
-                sha256 = fingerprint_data.get("sha256")
+                evidence = f"SHA-256: {sha256}"
 
-                if sha256:
-                    hash_entity_id = _get_or_create_entity(
-                        "image_sha256",
-                        sha256
-                    )
-
-                    save_relationship(
-                        source_entity_id=entity_id,
-                        target_entity_id=hash_entity_id,
-                        relation_type="has_sha256",
-                        confidence=1.0,
-                        evidence=(
-                            f"SHA-256: {sha256}"
-                        )
-                    )
-
-                    relationships.append({
-                        "source": entity_id,
-                        "target": hash_entity_id,
-                        "relation": "has_sha256",
-                        "confidence": 1.0,
-                        "evidence": (
-                            f"SHA-256: {sha256}"
-                        )
-                    })
-
-                # Average hash — perceptual fingerprint.
-                # Схожі зображення можуть мати близькі значення.
-                average_hash = fingerprint_data.get(
-                    "average_hash"
+                save_relationship(
+                    source_entity_id=entity_id,
+                    target_entity_id=hash_entity_id,
+                    relation_type="has_sha256",
+                    confidence=1.0,
+                    evidence=evidence
                 )
 
-                if average_hash:
-                    phash_entity_id = _get_or_create_entity(
-                        "image_perceptual_hash",
-                        average_hash
+                relationships.append({
+                    "source": entity_id,
+                    "target": hash_entity_id,
+                    "relation": "has_sha256",
+                    "confidence": 1.0,
+                    "evidence": evidence
+                })
+
+            average_hash = fingerprint_data.get(
+                "average_hash"
+            )
+
+            if average_hash:
+                phash_entity_id = _get_or_create_entity(
+                    "image_perceptual_hash",
+                    average_hash
+                )
+
+                evidence = (
+                    "Perceptual average hash calculated"
+                )
+
+                save_relationship(
+                    source_entity_id=entity_id,
+                    target_entity_id=phash_entity_id,
+                    relation_type="has_perceptual_hash",
+                    confidence=0.95,
+                    evidence=evidence
+                )
+
+                relationships.append({
+                    "source": entity_id,
+                    "target": phash_entity_id,
+                    "relation": "has_perceptual_hash",
+                    "confidence": 0.95,
+                    "evidence": evidence
+                })
+
+            metadata = data.get("metadata", {})
+            exif = metadata.get("exif", {})
+            exif_fields = exif.get("fields", {})
+
+            if isinstance(exif_fields, dict):
+                entity_fields = {
+                    "Make": "camera_make",
+                    "Model": "camera_model",
+                    "Software": "software",
+                    "DateTime": "datetime_original",
+                    "DateTimeOriginal": "datetime_original",
+                    "DateTimeDigitized": "datetime_digitized"
+                }
+
+                relation_types = {
+                    "camera_make": "captured_with_make",
+                    "camera_model": "captured_with_model",
+                    "software": "processed_with",
+                    "datetime_original": "captured_at",
+                    "datetime_digitized": "digitized_at"
+                }
+
+                for field_name, entity_type in entity_fields.items():
+                    value = exif_fields.get(field_name)
+
+                    if not value:
+                        continue
+
+                    metadata_entity_id = _get_or_create_entity(
+                        entity_type,
+                        value
+                    )
+
+                    relation_type = relation_types[entity_type]
+
+                    evidence = (
+                        f"EXIF {field_name}: {value}"
                     )
 
                     save_relationship(
                         source_entity_id=entity_id,
-                        target_entity_id=phash_entity_id,
-                        relation_type="has_perceptual_hash",
-                        confidence=0.95,
-                        evidence=(
-                            "Perceptual average hash calculated"
-                        )
+                        target_entity_id=metadata_entity_id,
+                        relation_type=relation_type,
+                        confidence=0.9,
+                        evidence=evidence
                     )
 
                     relationships.append({
                         "source": entity_id,
-                        "target": phash_entity_id,
-                        "relation": "has_perceptual_hash",
-                        "confidence": 0.95,
-                        "evidence": (
-                            "Perceptual average hash calculated"
-                        )
+                        "target": metadata_entity_id,
+                        "relation": relation_type,
+                        "confidence": 0.9,
+                        "evidence": evidence
                     })
+
+            if exif.get("gps_present", False):
+                gps_entity_id = _get_or_create_entity(
+                    "gps_metadata",
+                    "present"
+                )
+
+                evidence = (
+                    "EXIF GPS metadata is present"
+                )
+
+                save_relationship(
+                    source_entity_id=entity_id,
+                    target_entity_id=gps_entity_id,
+                    relation_type="contains_gps_metadata",
+                    confidence=0.95,
+                    evidence=evidence
+                )
+
+                relationships.append({
+                    "source": entity_id,
+                    "target": gps_entity_id,
+                    "relation": "contains_gps_metadata",
+                    "confidence": 0.95,
+                    "evidence": evidence
+                })
 
         return relationships
 
