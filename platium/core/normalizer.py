@@ -437,7 +437,9 @@ class Normalizer:
                         "evidence": evidence
                     })
 
-            if exif.get("gps_present", False):
+            gps = exif.get("gps", {})
+
+            if isinstance(gps, dict) and gps.get("present"):
                 gps_entity_id = _get_or_create_entity(
                     "gps_metadata",
                     "present"
@@ -462,6 +464,39 @@ class Normalizer:
                     "confidence": 0.95,
                     "evidence": evidence
                 })
+
+                latitude = gps.get("latitude")
+                longitude = gps.get("longitude")
+
+                if latitude is not None and longitude is not None:
+                    location_str = (
+                        f"{latitude:.8f},{longitude:.8f}"
+                    )
+
+                    location_entity_id = _get_or_create_entity(
+                        "location",
+                        location_str
+                    )
+
+                    evidence = (
+                        f"GPS coordinates: {location_str}"
+                    )
+
+                    save_relationship(
+                        source_entity_id=entity_id,
+                        target_entity_id=location_entity_id,
+                        relation_type="photo_taken_at",
+                        confidence=0.98,
+                        evidence=evidence
+                    )
+
+                    relationships.append({
+                        "source": entity_id,
+                        "target": location_entity_id,
+                        "relation": "photo_taken_at",
+                        "confidence": 0.98,
+                        "evidence": evidence
+                    })
 
         return relationships
 
