@@ -4,6 +4,7 @@ import os
 from PIL import Image
 
 from platium.core.result import ScanResult, ScanStatus
+from platium.scanners.image.metadata import extract_exif
 
 
 def _sha256_file(file_path, chunk_size=1024 * 1024):
@@ -39,6 +40,7 @@ def search(image_path, verbose=False) -> ScanResult:
     - dimensions
     - mode
     - file size
+    - EXIF metadata
     - SHA-256 hash
     - perceptual average hash
     """
@@ -65,6 +67,7 @@ def search(image_path, verbose=False) -> ScanResult:
             width, height = image.size
             mode = image.mode
             average_hash = _average_hash(image)
+            exif = extract_exif(image)
 
         sha256 = _sha256_file(image_path)
 
@@ -81,6 +84,9 @@ def search(image_path, verbose=False) -> ScanResult:
                 "mode": mode,
                 "aspect_ratio": round(width / height, 6) if height else None
             },
+            "metadata": {
+                "exif": exif
+            },
             "fingerprint": {
                 "sha256": sha256,
                 "average_hash": average_hash
@@ -92,6 +98,11 @@ def search(image_path, verbose=False) -> ScanResult:
                 "status": "success",
                 "message": "Image analyzed successfully"
             },
+            "metadata": {
+                "status": "success",
+                "exif_available": exif["available"],
+                "gps_present": exif["gps_present"]
+            },
             "hash": {
                 "status": "success",
                 "algorithms": ["sha256", "average_hash"]
@@ -102,9 +113,13 @@ def search(image_path, verbose=False) -> ScanResult:
             "Image file validated",
             f"Image format: {image_format}",
             f"Image dimensions: {width}x{height}",
+            "EXIF metadata analyzed",
             "SHA-256 fingerprint calculated",
             "Perceptual average hash calculated"
         ]
+
+        if exif["gps_present"]:
+            evidence.append("GPS metadata present")
 
         return ScanResult(
             target=image_path,
@@ -128,4 +143,4 @@ def search(image_path, verbose=False) -> ScanResult:
             target=image_path,
             scanner="image",
             error=str(exc)
-      )
+        )
